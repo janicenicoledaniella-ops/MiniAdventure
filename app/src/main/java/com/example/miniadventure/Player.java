@@ -1,3 +1,4 @@
+
 package com.example.miniadventure;
 
 import android.graphics.RectF;
@@ -7,56 +8,94 @@ public class Player {
     public float x, y, w, h;
     public float vx, vy;
     public boolean onGround;
-    private volatile boolean jumpRequested;
-    public void reset(float u) {
-        w = 0.8f * u;
-        h = 1.0f * u;
 
-        x = 1.0f * u;
-        y = 7.0f * u;
+    private int direction;
+    private boolean jumpRequested;
 
+    private static final float BASE_SPEED = 6.0f;
+    private static final float MAX_EXTRA_SPEED = 2.0f;
+    private static final float SPEED_PER_METER = 0.015f;
+    private static final float GRAVITY = 32.0f;
+    private static final float JUMP_POWER = 15.0f;
+
+    public void reset(float unit) {
+        w = 0.8f * unit;
+        h = 1.0f * unit;
+        x = 1.0f * unit;
+        y = 7.0f * unit;
         vx = 0;
         vy = 0;
-
+        direction = 0;
         onGround = false;
         jumpRequested = false;
     }
+
+    public void setDirection(int value) {
+        direction = Math.max(-1, Math.min(1, value));
+    }
+
     public void requestJump() {
         jumpRequested = true;
     }
 
+    public void update(float dt, float unit, List<RectF> platforms) {
+        float distance = Math.max(0, x / unit);
+        float extraSpeed = Math.min(
+                MAX_EXTRA_SPEED,
+                distance * SPEED_PER_METER
+        );
 
-    public void update(float dt, float u, List<RectF> platforms) {
-        float meters = x / u;
-        float speed = (5f + Math.min(4f, meters * 0.02f)) * u;
-        float gravity = 34f * u;
-        float jumpPower = 16f * u;
+        float moveSpeed = (BASE_SPEED + extraSpeed) * unit;
+        vx = direction * moveSpeed;
 
-        vx = speed;
         if (jumpRequested && onGround) {
-            vy = -jumpPower;
+            vy = -JUMP_POWER * unit;
             onGround = false;
         }
 
         jumpRequested = false;
 
+        x += vx * dt;
+
+        if (x < 0) {
+            x = 0;
+        }
+
+        RectF horizontalRect = getRect();
+
+        for (RectF platform : platforms) {
+            boolean verticalOverlap =
+                    horizontalRect.bottom > platform.top &&
+                            horizontalRect.top < platform.bottom;
+
+            if (!verticalOverlap ||
+                    !RectF.intersects(horizontalRect, platform)) {
+                continue;
+            }
+
+            if (vx > 0) {
+                x = platform.left - w;
+            } else if (vx < 0) {
+                x = platform.right;
+            }
+
+            horizontalRect = getRect();
+        }
+
         float oldTop = y;
         float oldBottom = y + h;
 
-        vy += gravity * dt;
-
-        x += vx * dt;
+        vy += GRAVITY * unit * dt;
         y += vy * dt;
 
         onGround = false;
 
-        RectF player = getRect();
+        RectF verticalRect = getRect();
 
         for (RectF platform : platforms) {
-
             boolean horizontalOverlap =
-                    player.right > platform.left &&
-                            player.left < platform.right;
+                    verticalRect.right > platform.left &&
+                            verticalRect.left < platform.right;
 
             if (!horizontalOverlap) {
                 continue;
@@ -64,7 +103,7 @@ public class Player {
 
             if (vy >= 0 &&
                     oldBottom <= platform.top &&
-                    player.bottom >= platform.top) {
+                    verticalRect.bottom >= platform.top) {
 
                 y = platform.top - h;
                 vy = 0;
@@ -74,7 +113,7 @@ public class Player {
 
             if (vy < 0 &&
                     oldTop >= platform.bottom &&
-                    player.top <= platform.bottom) {
+                    verticalRect.top <= platform.bottom) {
 
                 y = platform.bottom;
                 vy = 0;
@@ -84,30 +123,27 @@ public class Player {
     }
 
     public RectF getRect() {
-        return new RectF(
-                x,
-                y,
-                x + w,
-                y + h
-        );
+        return new RectF(x, y, x + w, y + h);
     }
-    public RectF getHitbox(float u) {
+
+    public RectF getHitbox(float unit) {
         return new RectF(
-                x + 0.1f * u,
-                y + 0.1f * u,
-                x + w - 0.1f * u,
+                x + 0.1f * unit,
+                y + 0.1f * unit,
+                x + w - 0.1f * unit,
                 y + h
         );
     }
 
-    public float getMeters(float u) {
-        return x / u;
+    public float getMeters(float unit) {
+        return x / unit;
     }
-    public boolean hasFallen(float u) {
-        return y > 14 * u;
+
+    public boolean hasFallen(float unit) {
+        return y > 14 * unit;
     }
 
     public float getCameraX(int screenWidth) {
-        return Math.max(0, x - screenWidth * 0.25f);
+        return Math.max(0, x - screenWidth * 0.35f);
     }
 }
