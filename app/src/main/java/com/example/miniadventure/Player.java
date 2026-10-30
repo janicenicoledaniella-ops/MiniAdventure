@@ -1,73 +1,113 @@
-package com.example.miniadventure; // samakan dengan package project kamu
+package com.example.miniadventure;
 
 import android.graphics.RectF;
-
 import java.util.List;
 
-/**
- * MILIK: Orang 1. Fisika pemain, lompat, tabrakan platform, kecepatan, dan kamera.
- * Semua posisi dalam piksel; 'u' = satuan dasar (tinggi layar / 12).
- */
 public class Player {
-    public float x, y, w, h, vx, vy;
+    public float x, y, w, h;
+    public float vx, vy;
     public boolean onGround;
     private volatile boolean jumpRequested;
-
     public void reset(float u) {
         w = 0.8f * u;
-        h = u;
-        x = 1 * u;
-        y = 7 * u;
-        vx = vy = 0;
+        h = 1.0f * u;
+
+        x = 1.0f * u;
+        y = 7.0f * u;
+
+        vx = 0;
+        vy = 0;
+
         onGround = false;
         jumpRequested = false;
     }
+    public void requestJump() {
+        jumpRequested = true;
+    }
 
-    /** Dipanggil dari input sentuh. */
-    public void requestJump() { jumpRequested = true; }
 
     public void update(float dt, float u, List<RectF> platforms) {
         float meters = x / u;
-        float speed = (5f + Math.min(4f, meters * 0.02f)) * u; // makin jauh makin cepat
-        float gravity = 30f * u, jumpPower = 15f * u;
+        float speed = (5f + Math.min(4f, meters * 0.02f)) * u;
+        float gravity = 34f * u;
+        float jumpPower = 16f * u;
 
         vx = speed;
-        if (jumpRequested && onGround) { vy = -jumpPower; onGround = false; }
-        jumpRequested = false;
-        vy += gravity * dt;
-
-        // gerak sumbu X
-        x += vx * dt;
-        RectF p = getRect();
-        for (RectF plat : platforms) {
-            if (RectF.intersects(p, plat)) { x = plat.left - w; p = getRect(); }
+        if (jumpRequested && onGround) {
+            vy = -jumpPower;
+            onGround = false;
         }
 
-        // gerak sumbu Y
+        jumpRequested = false;
+
+        float oldTop = y;
+        float oldBottom = y + h;
+
+        vy += gravity * dt;
+
+        x += vx * dt;
         y += vy * dt;
+
         onGround = false;
-        p = getRect();
-        for (RectF plat : platforms) {
-            if (RectF.intersects(p, plat)) {
-                if (vy > 0) { y = plat.top - h; onGround = true; }
-                else if (vy < 0) y = plat.bottom;
+
+        RectF player = getRect();
+
+        for (RectF platform : platforms) {
+
+            boolean horizontalOverlap =
+                    player.right > platform.left &&
+                            player.left < platform.right;
+
+            if (!horizontalOverlap) {
+                continue;
+            }
+
+            if (vy >= 0 &&
+                    oldBottom <= platform.top &&
+                    player.bottom >= platform.top) {
+
+                y = platform.top - h;
                 vy = 0;
-                p = getRect();
+                onGround = true;
+                break;
+            }
+
+            if (vy < 0 &&
+                    oldTop >= platform.bottom &&
+                    player.top <= platform.bottom) {
+
+                y = platform.bottom;
+                vy = 0;
+                break;
             }
         }
     }
 
-    public RectF getRect() { return new RectF(x, y, x + w, y + h); }
-
-    /** Hitbox untuk tabrakan musuh (dikecilkan sedikit supaya adil). */
+    public RectF getRect() {
+        return new RectF(
+                x,
+                y,
+                x + w,
+                y + h
+        );
+    }
     public RectF getHitbox(float u) {
-        return new RectF(x + 0.1f * u, y + 0.1f * u, x + w - 0.1f * u, y + h);
+        return new RectF(
+                x + 0.1f * u,
+                y + 0.1f * u,
+                x + w - 0.1f * u,
+                y + h
+        );
     }
 
-    public float getMeters(float u) { return x / u; }
+    public float getMeters(float u) {
+        return x / u;
+    }
+    public boolean hasFallen(float u) {
+        return y > 14 * u;
+    }
 
-    public boolean hasFallen(float u) { return y > 14 * u; }
-
-    /** Posisi kamera: pemain berada di 25% dari kiri layar. */
-    public float getCameraX(int screenWidth) { return Math.max(0, x - screenWidth * 0.25f); }
+    public float getCameraX(int screenWidth) {
+        return Math.max(0, x - screenWidth * 0.25f);
+    }
 }
