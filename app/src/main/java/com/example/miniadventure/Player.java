@@ -1,16 +1,18 @@
-
 package com.example.miniadventure;
 
 import android.graphics.RectF;
+
 import java.util.List;
 
 public class Player {
+
     public float x, y, w, h;
     public float vx, vy;
     public boolean onGround;
 
     private int direction;
     private boolean jumpRequested;
+    private float speedMultiplier = 1f;
 
     private static final float BASE_SPEED = 6.0f;
     private static final float MAX_EXTRA_SPEED = 2.0f;
@@ -21,13 +23,20 @@ public class Player {
     public void reset(float unit) {
         w = 0.8f * unit;
         h = 1.0f * unit;
+
         x = 1.0f * unit;
         y = 7.0f * unit;
+
         vx = 0;
         vy = 0;
+
         direction = 0;
         onGround = false;
         jumpRequested = false;
+    }
+
+    public void setSpeedMultiplier(float multiplier) {
+        speedMultiplier = Math.max(1f, multiplier);
     }
 
     public void setDirection(int value) {
@@ -38,14 +47,21 @@ public class Player {
         jumpRequested = true;
     }
 
-    public void update(float dt, float unit, List<RectF> platforms) {
+    public void update(
+            float dt,
+            float unit,
+            List<RectF> platforms
+    ) {
         float distance = Math.max(0, x / unit);
+
         float extraSpeed = Math.min(
                 MAX_EXTRA_SPEED,
                 distance * SPEED_PER_METER
         );
 
-        float moveSpeed = (BASE_SPEED + extraSpeed) * unit;
+        float moveSpeed =
+                (BASE_SPEED + extraSpeed) * unit * speedMultiplier;
+
         vx = direction * moveSpeed;
 
         if (jumpRequested && onGround) {
@@ -123,7 +139,12 @@ public class Player {
     }
 
     public RectF getRect() {
-        return new RectF(x, y, x + w, y + h);
+        return new RectF(
+                x,
+                y,
+                x + w,
+                y + h
+        );
     }
 
     public RectF getHitbox(float unit) {
@@ -144,6 +165,9 @@ public class Player {
     }
 
     public float getCameraX(int screenWidth) {
-        return Math.max(0, x - screenWidth * 0.35f);
+        return Math.max(
+                0,
+                x - screenWidth * 0.35f
+        );
     }
 }
