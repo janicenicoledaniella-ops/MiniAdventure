@@ -1,7 +1,7 @@
-
 package com.example.miniadventure;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -10,160 +10,107 @@ import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public class GameView extends SurfaceView implements Runnable {
 
     private static final int PLAYING = 0;
     private static final int GAME_OVER = 1;
-    private static final int WIN = 2;
 
-    private int state = PLAYING;
+    private volatile int state = PLAYING;
 
     private Thread thread;
     private volatile boolean running;
+    private volatile boolean restartRequested;
 
     private final SurfaceHolder holder;
-    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    private final Paint paint =
+            new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    private final Player player = new Player();
+    private final World world = new World();
+
+    private final SharedPreferences preferences;
+
+    // Menghubungkan input layar dengan game thread.
+    private final Object inputLock = new Object();
+
+    private boolean left;
+    private boolean right;
+    private boolean jumpHeld;
+    private boolean jumpRequested;
 
     private float u;
     private int sw, sh;
-    private boolean levelBuilt = false;
 
-    private final Player player = new Player();
+    private boolean levelBuilt;
 
-    private volatile boolean left;
-    private volatile boolean right;
-    private boolean jumpHeld;
+    private int lives;
+    private int round;
+    private int highScore;
 
-    private int score, lives;
     private float camX;
-
-    private final List<RectF> platforms = new ArrayList<>();
-    private final List<RectF> coins = new ArrayList<>();
-    private final List<Enemy> enemies = new ArrayList<>();
-
-    private RectF goal;
-
-    private static class Enemy {
-        RectF rect;
-        float minX, maxX, dir = 1;
-        boolean alive = true;
-
-        Enemy(RectF r, float minX, float maxX) {
-            rect = r;
-            this.minX = minX;
-            this.maxX = maxX;
-        }
-    }
+    private float speedMultiplier = 1f;
 
     public GameView(Context context) {
         super(context);
+
         holder = getHolder();
+
+        preferences = context.getSharedPreferences(
+                "MiniAdventureData",
+                Context.MODE_PRIVATE
+        );
+
+        highScore = preferences.getInt("highScore", 0);
     }
 
-    private void buildLevel() {
-        platforms.clear();
-        coins.clear();
-        enemies.clear();
-
-        float[][] ground = {
-                {0, 15},
-                {18, 12},
-                {34, 16},
-                {53, 20}
-        };
-
-        for (float[] g : ground) {
-            platforms.add(new RectF(
-                    g[0] * u,
-                    9 * u,
-                    (g[0] + g[1]) * u,
-                    12 * u
-            ));
+    private void clearInput() {
+        synchronized (inputLock) {
+            left = false;
+            right = false;
+            jumpHeld = false;
+            jumpRequested = false;
         }
+    }
 
-        float[][] floating = {
-                {8, 6.5f, 4},
-                {20, 6, 3},
-                {24, 4.5f, 3},
-                {38, 6.5f, 4},
-                {44, 5, 3},
-                {58, 6, 4}
-        };
+    // Permainan baru: skor, nyawa, dan putaran direset.
+    private void startNewGame() {
+        world.resetScore();
 
-        for (float[] f : floating) {
-            platforms.add(new RectF(
-                    f[0] * u,
-                    f[1] * u,
-                    (f[0] + f[2]) * u,
-                    (f[1] + 0.5f) * u
-            ));
-        }
+        lives = 3;
+        round = 1;
+        speedMultiplier = 1f;
 
-        float[][] coinPos = {
-                {5, 8}, {9, 5.5f}, {10, 5.5f},
-                {16.5f, 6}, {21, 5}, {25, 3.5f},
-                {26, 3.5f}, {32, 6}, {39, 5.5f},
-                {45, 4}, {59, 5}, {60, 5}
-        };
+        buildRound();
 
-        for (float[] c : coinPos) {
-            coins.add(new RectF(
-                    c[0] * u,
-                    c[1] * u,
-                    (c[0] + 0.5f) * u,
-                    (c[1] + 0.5f) * u
-            ));
-        }
+        state = PLAYING;
+    }
 
-        float[][] en = {
-                {12, 10, 14},
-                {24, 20, 28},
-                {42, 36, 48},
-                {60, 55, 70}
-        };
-
-        for (float[] e : en) {
-            enemies.add(new Enemy(
-                    new RectF(
-                            e[0] * u,
-                            8.2f * u,
-                            (e[0] + 0.8f) * u,
-                            9 * u
-                    ),
-                    e[1] * u,
-                    e[2] * u
-            ));
-        }
-
-        goal = new RectF(
-                71 * u,
-                6 * u,
-                72 * u,
-                9 * u
-        );
+    // Putaran baru: skor dan nyawa tidak direset.
+    private void buildRound() {
+        // World membuat susunan baru berdasarkan nomor putaran.
+    // Kecepatan musuh juga diatur oleh World.
+        world.buildLevel(u, round);
 
         resetPlayer();
     }
 
     private void resetPlayer() {
-        player.reset(u);
+        clearInput();
 
-        left = false;
-        right = false;
-        jumpHeld = false;
+        player.reset(u);
+        player.setSpeedMultiplier(1f);
 
         camX = 0;
     }
 
-    private void restartGame() {
-        score = 0;
-        lives = 3;
-        state = PLAYING;
+    private void nextRound() {
+        round++;
 
-        buildLevel();
+        // Kecepatan naik 10% dari kecepatan dasar setiap putaran.
+        speedMultiplier = 1f + (round - 1) * 0.08f;
+
+        buildRound();
     }
 
     @Override
@@ -172,6 +119,7 @@ public class GameView extends SurfaceView implements Runnable {
 
         while (running) {
             if (!holder.getSurface().isValid()) {
+                last = System.nanoTime();
                 continue;
             }
 
@@ -180,13 +128,16 @@ public class GameView extends SurfaceView implements Runnable {
                 sh = getHeight();
 
                 if (sw == 0 || sh == 0) {
+                    last = System.nanoTime();
                     continue;
                 }
 
                 u = sh / 12f;
                 levelBuilt = true;
 
-                restartGame();
+                startNewGame();
+
+                last = System.nanoTime();
             }
 
             long now = System.nanoTime();
@@ -198,79 +149,127 @@ public class GameView extends SurfaceView implements Runnable {
 
             last = now;
 
+            if (restartRequested) {
+                restartRequested = false;
+                startNewGame();
+            }
+
             if (state == PLAYING) {
-                update(dt);
+                // Langkah kecil untuk menjaga ketelitian tabrakan.
+                int steps = Math.max(
+                        1,
+                        (int) Math.ceil(
+                                dt * speedMultiplier / (1f / 120f)
+                        )
+                );
+
+                float stepDt = dt / steps;
+
+                for (int i = 0; i < steps; i++) {
+                    if (state != PLAYING) {
+                        break;
+                    }
+
+                    if (update(stepDt)) {
+                        break;
+                    }
+                }
             }
 
             draw();
         }
     }
 
-    private void update(float dt) {
-        int direction = (right ? 1 : 0) - (left ? 1 : 0);
+    // True berarti terjadi perpindahan putaran atau kehilangan nyawa.
+    private boolean update(float dt) {
+        int direction;
+        boolean jump;
+
+        synchronized (inputLock) {
+            direction = (right ? 1 : 0) - (left ? 1 : 0);
+
+            jump = jumpRequested;
+            jumpRequested = false;
+        }
 
         player.setDirection(direction);
-        player.update(dt, u, platforms);
+
+        if (jump) {
+            player.requestJump();
+        }
+
+        float previousBottom = player.y + player.h;
+
+        player.update(dt, u, world.platforms);
 
         RectF p = player.getHitbox(u);
 
         if (player.hasFallen(u)) {
             loseLife();
-            return;
+            return true;
         }
 
-        for (int i = coins.size() - 1; i >= 0; i--) {
-            if (RectF.intersects(p, coins.get(i))) {
-                coins.remove(i);
-                score += 10;
-            }
+        world.collectCoins(p);
+        world.updateEnemies(dt, u);
+
+        // Injak dari atas: musuh hilang dan pemain memantul.
+        Enemy stomped = world.stompEnemy(
+                p,
+                previousBottom,
+                p.bottom > previousBottom
+        );
+
+        if (stomped != null) {
+            player.y = stomped.rect.top - player.h;
+            player.vy = -10f * u;
+            player.onGround = false;
+
+            p = player.getHitbox(u);
         }
 
-        for (Enemy e : enemies) {
-            if (!e.alive) {
-                continue;
-            }
-
-            e.rect.offset(e.dir * 2f * u * dt, 0);
-
-            if (e.rect.left < e.minX) {
-                e.dir = 1;
-            }
-
-            if (e.rect.right > e.maxX) {
-                e.dir = -1;
-            }
-
-            if (RectF.intersects(p, e.rect)) {
-                if (player.vy > 0 &&
-                        p.bottom < e.rect.centerY()) {
-
-                    e.alive = false;
-                    player.vy = -10f * u;
-                    score += 50;
-
-                } else {
-                    loseLife();
-                    return;
-                }
-            }
+        // Tabrak samping atau bawah: nyawa berkurang.
+        if (world.hitsEnemy(p)) {
+            loseLife();
+            return true;
         }
 
-        if (RectF.intersects(p, goal)) {
-            state = WIN;
+        // Bendera langsung memulai putaran berikutnya.
+        if (RectF.intersects(p, world.goal)) {
+            nextRound();
+            return true;
         }
 
         camX = player.getCameraX(sw);
+
+        return false;
     }
 
     private void loseLife() {
         lives--;
 
         if (lives <= 0) {
-            state = GAME_OVER;
+            lives = 0;
+            finishGame();
         } else {
+            // Skor, putaran, dan kecepatan tetap.
+            // Koin yang diambil dan musuh yang kalah tetap hilang.
             resetPlayer();
         }
+    }
+
+    private void finishGame() {
+        int totalScore = world.getScore();
+
+        if (totalScore > highScore) {
+            highScore = totalScore;
+
+            preferences.edit()
+                    .putInt("highScore", highScore)
+                    .apply();
+        }
+
+        clearInput();
+        state = GAME_OVER;
     }
 
     private void draw() {
@@ -286,142 +285,187 @@ public class GameView extends SurfaceView implements Runnable {
             c.save();
             c.translate(-camX, 0);
 
+            // Tanah dan platform.
             paint.setColor(Color.rgb(76, 160, 60));
 
-            for (RectF r : platforms) {
-                c.drawRect(r, paint);
+            for (RectF platform : world.platforms) {
+                c.drawRect(platform, paint);
             }
 
+            // Koin.
             paint.setColor(Color.YELLOW);
 
-            for (RectF r : coins) {
+            for (RectF coin : world.coins) {
                 c.drawCircle(
-                        r.centerX(),
-                        r.centerY(),
-                        r.width() / 2,
+                        coin.centerX(),
+                        coin.centerY(),
+                        coin.width() / 2,
                         paint
                 );
             }
 
+            // Musuh.
             paint.setColor(Color.RED);
 
-            for (Enemy e : enemies) {
-                if (e.alive) {
-                    c.drawRect(e.rect, paint);
-                }
+            for (Enemy enemy : world.enemies) {
+                c.drawRect(enemy.rect, paint);
             }
 
+            // Bendera.
             paint.setColor(Color.WHITE);
-            c.drawRect(goal, paint);
+            c.drawRect(world.goal, paint);
 
             paint.setColor(Color.MAGENTA);
 
             c.drawRect(
-                    goal.left,
-                    goal.top,
-                    goal.right + u,
-                    goal.top + u,
+                    world.goal.left,
+                    world.goal.top,
+                    world.goal.right + u,
+                    world.goal.top + u,
                     paint
             );
 
+            // Pemain.
             paint.setColor(Color.rgb(30, 80, 220));
             c.drawRect(player.getRect(), paint);
 
             c.restore();
 
-            paint.setColor(Color.BLACK);
-            paint.setTextSize(u * 0.7f);
-            paint.setTextAlign(Paint.Align.LEFT);
+            drawHud(c);
+            drawControls(c);
 
-            c.drawText(
-                    "Skor: " + score + "   Nyawa: " + lives,
-                    u * 0.5f,
-                    u,
-                    paint
-            );
-
-            paint.setColor(Color.argb(75, 0, 0, 0));
-
-            c.drawRect(
-                    0, sh - 2.5f * u,
-                    sw * 0.25f, sh,
-                    paint
-            );
-
-            c.drawRect(
-                    sw * 0.25f, sh - 2.5f * u,
-                    sw * 0.5f, sh,
-                    paint
-            );
-
-            c.drawRect(
-                    sw * 0.5f, sh - 2.5f * u,
-                    sw, sh,
-                    paint
-            );
-
-            paint.setColor(Color.WHITE);
-            paint.setTextAlign(Paint.Align.CENTER);
-
-            c.drawText(
-                    "<",
-                    sw * 0.125f,
-                    sh - u,
-                    paint
-            );
-
-            c.drawText(
-                    ">",
-                    sw * 0.375f,
-                    sh - u,
-                    paint
-            );
-
-            c.drawText(
-                    "LOMPAT",
-                    sw * 0.75f,
-                    sh - u,
-                    paint
-            );
-
-            if (state != PLAYING) {
-                paint.setColor(Color.argb(160, 0, 0, 0));
-                c.drawRect(0, 0, sw, sh, paint);
-
-                paint.setColor(Color.WHITE);
-                paint.setTextSize(u * 1.4f);
-
-                c.drawText(
-                        state == WIN ? "KAMU MENANG!" : "GAME OVER",
-                        sw / 2f,
-                        sh / 2f,
-                        paint
-                );
-
-                paint.setTextSize(u * 0.7f);
-
-                c.drawText(
-                        "Skor: " + score + " - Tap untuk main lagi",
-                        sw / 2f,
-                        sh / 2f + u * 1.2f,
-                        paint
-                );
+            if (state == GAME_OVER) {
+                drawGameOver(c);
             }
-
         } finally {
             holder.unlockCanvasAndPost(c);
         }
     }
 
+    private void drawHud(Canvas c) {
+        paint.setColor(Color.BLACK);
+        paint.setTextSize(u * 0.55f);
+        paint.setTextAlign(Paint.Align.LEFT);
+
+        c.drawText(
+                "Skor: " + world.getScore()
+                        + "   Nyawa: " + lives
+                        + "   Putaran: " + round,
+                u * 0.5f,
+                u,
+                paint
+        );
+    }
+
+    private void drawControls(Canvas c) {
+        paint.setColor(Color.argb(75, 0, 0, 0));
+
+        c.drawRect(
+                0,
+                sh - 2.5f * u,
+                sw * 0.25f,
+                sh,
+                paint
+        );
+
+        c.drawRect(
+                sw * 0.25f,
+                sh - 2.5f * u,
+                sw * 0.5f,
+                sh,
+                paint
+        );
+
+        c.drawRect(
+                sw * 0.5f,
+                sh - 2.5f * u,
+                sw,
+                sh,
+                paint
+        );
+
+        paint.setColor(Color.WHITE);
+        paint.setTextSize(u * 0.7f);
+        paint.setTextAlign(Paint.Align.CENTER);
+
+        c.drawText(
+                "<",
+                sw * 0.125f,
+                sh - u,
+                paint
+        );
+
+        c.drawText(
+                ">",
+                sw * 0.375f,
+                sh - u,
+                paint
+        );
+
+        c.drawText(
+                "LOMPAT",
+                sw * 0.75f,
+                sh - u,
+                paint
+        );
+    }
+
+    private void drawGameOver(Canvas c) {
+        paint.setColor(Color.argb(190, 0, 0, 0));
+        c.drawRect(0, 0, sw, sh, paint);
+
+        paint.setColor(Color.WHITE);
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTextSize(u * 1.1f);
+
+        c.drawText(
+                "GAME OVER",
+                sw / 2f,
+                sh / 2f - 1.5f * u,
+                paint
+        );
+
+        paint.setTextSize(u * 0.7f);
+
+        c.drawText(
+                "Total Score: " + world.getScore(),
+                sw / 2f,
+                sh / 2f,
+                paint
+        );
+
+        c.drawText(
+                "High Score: " + highScore,
+                sw / 2f,
+                sh / 2f + u,
+                paint
+        );
+
+        paint.setTextSize(u * 0.55f);
+
+        c.drawText(
+                "Tap untuk main lagi",
+                sw / 2f,
+                sh / 2f + 2.2f * u,
+                paint
+        );
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent e) {
-        int action = e.getActionMasked();
+        int action;
+        action = e.getActionMasked();
 
-        if (state != PLAYING) {
+        if (state == GAME_OVER) {
             if (action == MotionEvent.ACTION_DOWN) {
-                restartGame();
+                restartRequested = true;
             }
 
+            return true;
+        }
+
+        if (action == MotionEvent.ACTION_CANCEL) {
+            clearInput();
             return true;
         }
 
@@ -435,8 +479,7 @@ public class GameView extends SurfaceView implements Runnable {
 
         int skip = (
                 action == MotionEvent.ACTION_UP ||
-                        action == MotionEvent.ACTION_POINTER_UP ||
-                        action == MotionEvent.ACTION_CANCEL
+                        action == MotionEvent.ACTION_POINTER_UP
         ) ? e.getActionIndex() : -1;
 
         for (int i = 0; i < e.getPointerCount(); i++) {
@@ -455,18 +498,14 @@ public class GameView extends SurfaceView implements Runnable {
             }
         }
 
-        if (newJumpPress && j && !jumpHeld) {
-            player.requestJump();
-        }
+        synchronized (inputLock) {
+            if (newJumpPress && j && !jumpHeld) {
+                jumpRequested = true;
+            }
 
-        left = l;
-        right = r;
-        jumpHeld = j;
-
-        if (action == MotionEvent.ACTION_CANCEL) {
-            left = false;
-            right = false;
-            jumpHeld = false;
+            left = l;
+            right = r;
+            jumpHeld = j;
         }
 
         return true;
@@ -492,5 +531,7 @@ public class GameView extends SurfaceView implements Runnable {
         } catch (InterruptedException ignored) {
             Thread.currentThread().interrupt();
         }
+
+        clearInput();
     }
 }
