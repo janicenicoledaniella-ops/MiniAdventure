@@ -1,3 +1,4 @@
+
 package com.example.miniadventure;
 
 import android.graphics.RectF;
@@ -25,7 +26,7 @@ public class Player {
         h = 1.0f * unit;
 
         x = 1.0f * unit;
-        y = 7.0f * unit;
+        y = 8.0f * unit;
 
         vx = 0;
         vy = 0;
@@ -80,22 +81,9 @@ public class Player {
         RectF horizontalRect = getRect();
 
         for (RectF platform : platforms) {
-            boolean verticalOverlap =
-                    horizontalRect.bottom > platform.top &&
-                            horizontalRect.top < platform.bottom;
-
-            if (!verticalOverlap ||
-                    !RectF.intersects(horizontalRect, platform)) {
+            if (y + h <= platform.top + 0.1f * unit) {
                 continue;
             }
-
-            if (vx > 0) {
-                x = platform.left - w;
-            } else if (vx < 0) {
-                x = platform.right;
-            }
-
-            horizontalRect = getRect();
         }
 
         float oldTop = y;
@@ -118,7 +106,7 @@ public class Player {
             }
 
             if (vy >= 0 &&
-                    oldBottom <= platform.top &&
+                    oldBottom <= platform.top + 0.05f * unit &&
                     verticalRect.bottom >= platform.top) {
 
                 y = platform.top - h;

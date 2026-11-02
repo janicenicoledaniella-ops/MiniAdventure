@@ -31,6 +31,8 @@ public class GameView extends SurfaceView implements Runnable {
 
     private final SharedPreferences preferences;
 
+    private final Assets assets;
+
     // Menghubungkan input layar dengan game thread.
     private final Object inputLock = new Object();
 
@@ -55,6 +57,7 @@ public class GameView extends SurfaceView implements Runnable {
         super(context);
 
         holder = getHolder();
+        assets = new Assets(context);
 
         preferences = context.getSharedPreferences(
                 "MiniAdventureData",
@@ -81,6 +84,7 @@ public class GameView extends SurfaceView implements Runnable {
         round = 1;
         speedMultiplier = 1f;
 
+        assets.setBackgroundByRound(round);
         buildRound();
 
         state = PLAYING;
@@ -110,6 +114,7 @@ public class GameView extends SurfaceView implements Runnable {
         // Kecepatan naik 10% dari kecepatan dasar setiap putaran.
         speedMultiplier = 1f + (round - 1) * 0.08f;
 
+        assets.setBackgroundByRound(round);
         buildRound();
     }
 
@@ -135,6 +140,8 @@ public class GameView extends SurfaceView implements Runnable {
                 u = sh / 12f;
                 levelBuilt = true;
 
+                assets.load(u);
+                assets.setBackgroundByRound(round);
                 startNewGame();
 
                 last = System.nanoTime();
@@ -282,52 +289,53 @@ public class GameView extends SurfaceView implements Runnable {
         try {
             c.drawColor(Color.rgb(135, 206, 235));
 
+            // Background
+            assets.drawBackground(c, sw, sh, camX);
+
             c.save();
             c.translate(-camX, 0);
 
             // Tanah dan platform.
-            paint.setColor(Color.rgb(76, 160, 60));
-
             for (RectF platform : world.platforms) {
-                c.drawRect(platform, paint);
+                assets.drawPlatform(c, platform, u);
             }
 
             // Koin.
-            paint.setColor(Color.YELLOW);
-
             for (RectF coin : world.coins) {
-                c.drawCircle(
-                        coin.centerX(),
-                        coin.centerY(),
-                        coin.width() / 2,
-                        paint
-                );
+                assets.drawCoin(c, coin);
             }
 
             // Musuh.
             paint.setColor(Color.RED);
-
             for (Enemy enemy : world.enemies) {
                 c.drawRect(enemy.rect, paint);
             }
 
             // Bendera.
-            paint.setColor(Color.WHITE);
-            c.drawRect(world.goal, paint);
+            if (assets.flagBmp != null) {
+                float flagWidth = 2.0f * u;
+                float flagHeight = 2.5f * u;
 
-            paint.setColor(Color.MAGENTA);
+                float flagLeft = world.goal.centerX() - flagWidth / 2f;
+                float flagBottom = world.goal.bottom;
 
-            c.drawRect(
-                    world.goal.left,
-                    world.goal.top,
-                    world.goal.right + u,
-                    world.goal.top + u,
-                    paint
-            );
+                RectF flagRect = new RectF(
+                        flagLeft,
+                        flagBottom - flagHeight,
+                        flagLeft + flagWidth,
+                        flagBottom
+                );
+
+                c.drawBitmap(
+                        assets.flagBmp,
+                        null,
+                        flagRect,
+                        paint
+                );
+            }
 
             // Pemain.
-            paint.setColor(Color.rgb(30, 80, 220));
-            c.drawRect(player.getRect(), paint);
+            assets.drawPlayer(c, player);
 
             c.restore();
 
@@ -388,26 +396,49 @@ public class GameView extends SurfaceView implements Runnable {
         paint.setTextSize(u * 0.7f);
         paint.setTextAlign(Paint.Align.CENTER);
 
-        c.drawText(
-                "<",
-                sw * 0.125f,
-                sh - u,
-                paint
-        );
+        float buttonSize = 1.2f * u;
 
-        c.drawText(
-                ">",
-                sw * 0.375f,
-                sh - u,
-                paint
-        );
+        if (assets.leftArrowBmp != null) {
+            c.drawBitmap(
+                    assets.leftArrowBmp,
+                    null,
+                    new RectF(
+                            sw * 0.125f - buttonSize / 2,
+                            sh - 1.75f * u,
+                            sw * 0.125f + buttonSize / 2,
+                            sh - 1.75f * u + buttonSize
+                    ),
+                    paint
+            );
+        }
 
-        c.drawText(
-                "LOMPAT",
-                sw * 0.75f,
-                sh - u,
-                paint
-        );
+        if (assets.rightArrowBmp != null) {
+            c.drawBitmap(
+                    assets.rightArrowBmp,
+                    null,
+                    new RectF(
+                            sw * 0.375f - buttonSize / 2,
+                            sh - 1.75f * u,
+                            sw * 0.375f + buttonSize / 2,
+                            sh - 1.75f * u + buttonSize
+                    ),
+                    paint
+            );
+        }
+
+        if (assets.jumpArrowBmp != null) {
+            c.drawBitmap(
+                    assets.jumpArrowBmp,
+                    null,
+                    new RectF(
+                            sw * 0.75f - buttonSize / 2,
+                            sh - 1.75f * u,
+                            sw * 0.75f + buttonSize / 2,
+                            sh - 1.75f * u + buttonSize
+                    ),
+                    paint
+            );
+        }
     }
 
     private void drawGameOver(Canvas c) {

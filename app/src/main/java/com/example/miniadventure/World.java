@@ -291,9 +291,9 @@ public class World {
     ) {
         platforms.add(new RectF(
                 x * u,
-                9 * u,
+                9f * u,
                 (x + width) * u,
-                12 * u
+                12f * u
         ));
     }
 
