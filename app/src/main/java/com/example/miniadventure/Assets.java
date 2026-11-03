@@ -26,6 +26,11 @@ public class Assets {
     public Bitmap rightArrowBmp;
     public Bitmap jumpArrowBmp;
 
+    public Bitmap heart1Bmp;
+    public Bitmap heart2Bmp;
+    public Bitmap heart3Bmp;
+
+
     private Bitmap brickBmp;
     private Bitmap coinBmp;
     private Bitmap groundBmp;
@@ -50,6 +55,25 @@ public class Assets {
                 R.drawable.brick,
                 Math.round(u * 1.2f),
                 Math.round(u)
+        );
+        coinBmp = BitmapFactory.decodeResource(
+                context.getResources(),
+                R.drawable.coin
+        );
+
+        heart1Bmp = BitmapFactory.decodeResource(
+                context.getResources(),
+                R.drawable.heart1
+        );
+
+        heart2Bmp = BitmapFactory.decodeResource(
+                context.getResources(),
+                R.drawable.heart2
+        );
+
+        heart3Bmp = BitmapFactory.decodeResource(
+                context.getResources(),
+                R.drawable.heart3
         );
 
         leftArrowBmp = BitmapFactory.decodeResource(
@@ -200,14 +224,26 @@ public class Assets {
     }
 
 
-    public void drawCoin(Canvas c, RectF r) {
+    public void drawCoin(Canvas c, RectF coin) {
         if (coinBmp != null) {
-            c.drawBitmap(coinBmp, null, new RectF(r.left, r.top, r.right, r.bottom), paint);
-            return;
-        }
+            float width = coin.width() * 1.3f;
+            float height = coin.height() * 1.3f;
 
-        paint.setColor(Color.YELLOW);
-        c.drawCircle(r.centerX(), r.centerY(), r.width() / 2, paint);
+            RectF dst = new RectF(
+                    coin.centerX() - width / 2f,
+                    coin.centerY() - height / 2f,
+                    coin.centerX() + width / 2f,
+                    coin.centerY() + height / 2f
+            );
+
+            c.drawBitmap(coinBmp, null, dst, paint);
+        }
+    }
+
+    public void drawCoinIcon(Canvas c, RectF dst) {
+        if (coinBmp != null) {
+            c.drawBitmap(coinBmp, null, dst, paint);
+        }
     }
 
     public void drawEnemy(Canvas c, Enemy e) {

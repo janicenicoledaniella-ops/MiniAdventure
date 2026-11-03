@@ -9,6 +9,7 @@ import android.graphics.RectF;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.graphics.Bitmap;
 
 public class GameView extends SurfaceView implements Runnable {
 
@@ -355,59 +356,107 @@ public class GameView extends SurfaceView implements Runnable {
         paint.setTextSize(u * 0.55f);
         paint.setTextAlign(Paint.Align.LEFT);
 
-        c.drawText(
-                "Skor: " + world.getScore()
-                        + "   Nyawa: " + lives
-                        + "   Putaran: " + round,
+        float iconSize = u * 1.0f;
+        float hudY = u * 0.85f;
+
+        RectF coinIcon = new RectF(
                 u * 0.5f,
-                u,
+                u * 0.15f,
+                u * 1.5f,
+                u * 1.15f
+        );
+
+        assets.drawCoinIcon(c, coinIcon);
+
+        c.drawText(
+                String.valueOf(world.getScore()),
+                u * 1.65f,
+                hudY,
+                paint
+        );
+
+        Bitmap heart;
+
+        if (lives >= 3) {
+            heart = assets.heart1Bmp;
+        } else if (lives == 2) {
+            heart = assets.heart2Bmp;
+        } else {
+            heart = assets.heart3Bmp;
+        }
+
+        if (heart != null) {
+            float heartWidth = u * 2.4f;
+            float heartHeight = u * 0.8f;
+
+            RectF heartRect = new RectF(
+                    u * 2.8f,
+                    u * 0.15f,
+                    u * 2.8f + heartWidth,
+                    u * 0.15f + heartHeight
+            );
+
+            c.drawBitmap(
+                    heart,
+                    null,
+                    heartRect,
+                    paint
+            );
+        }
+
+        c.drawText(
+                "Putaran: " + round,
+                u * 5.5f,
+                hudY,
                 paint
         );
     }
 
+    private RectF getLeftButtonRect() {
+        float buttonSize = 1.4f * u;
+        float centerX = sw * 0.125f;
+        float top = sh - 1.75f * u;
+
+        return new RectF(
+                centerX - buttonSize / 2f,
+                top,
+                centerX + buttonSize / 2f,
+                top + buttonSize
+        );
+    }
+
+    private RectF getRightButtonRect() {
+        float buttonSize = 1.4f * u;
+        float centerX = sw * 0.375f;
+        float top = sh - 1.75f * u;
+
+        return new RectF(
+                centerX - buttonSize / 2f,
+                top,
+                centerX + buttonSize / 2f,
+                top + buttonSize
+        );
+    }
+
+    private RectF getJumpButtonRect() {
+        float buttonSize = 1.4f * u;
+        float centerX = sw * 0.75f;
+        float top = sh - 1.75f * u;
+
+        return new RectF(
+                centerX - buttonSize / 2f,
+                top,
+                centerX + buttonSize / 2f,
+                top + buttonSize
+        );
+    }
+
     private void drawControls(Canvas c) {
-        paint.setColor(Color.argb(75, 0, 0, 0));
-
-        c.drawRect(
-                0,
-                sh - 2.5f * u,
-                sw * 0.25f,
-                sh,
-                paint
-        );
-
-        c.drawRect(
-                sw * 0.25f,
-                sh - 2.5f * u,
-                sw * 0.5f,
-                sh,
-                paint
-        );
-
-        c.drawRect(
-                sw * 0.5f,
-                sh - 2.5f * u,
-                sw,
-                sh,
-                paint
-        );
-
-        paint.setColor(Color.WHITE);
-        paint.setTextSize(u * 0.7f);
-        paint.setTextAlign(Paint.Align.CENTER);
-
-        float buttonSize = 1.2f * u;
-
         if (assets.leftArrowBmp != null) {
             c.drawBitmap(
                     assets.leftArrowBmp,
                     null,
-                    new RectF(
-                            sw * 0.125f - buttonSize / 2,
-                            sh - 1.75f * u,
-                            sw * 0.125f + buttonSize / 2,
-                            sh - 1.75f * u + buttonSize
-                    ),
+                    getLeftButtonRect(),
                     paint
             );
         }
@@ -416,12 +465,7 @@ public class GameView extends SurfaceView implements Runnable {
             c.drawBitmap(
                     assets.rightArrowBmp,
                     null,
-                    new RectF(
-                            sw * 0.375f - buttonSize / 2,
-                            sh - 1.75f * u,
-                            sw * 0.375f + buttonSize / 2,
-                            sh - 1.75f * u + buttonSize
-                    ),
+                    getRightButtonRect(),
                     paint
             );
         }
@@ -430,12 +474,7 @@ public class GameView extends SurfaceView implements Runnable {
             c.drawBitmap(
                     assets.jumpArrowBmp,
                     null,
-                    new RectF(
-                            sw * 0.75f - buttonSize / 2,
-                            sh - 1.75f * u,
-                            sw * 0.75f + buttonSize / 2,
-                            sh - 1.75f * u + buttonSize
-                    ),
+                    getJumpButtonRect(),
                     paint
             );
         }
@@ -484,14 +523,12 @@ public class GameView extends SurfaceView implements Runnable {
 
     @Override
     public boolean onTouchEvent(MotionEvent e) {
-        int action;
-        action = e.getActionMasked();
+        int action = e.getActionMasked();
 
         if (state == GAME_OVER) {
             if (action == MotionEvent.ACTION_DOWN) {
                 restartRequested = true;
             }
-
             return true;
         }
 
@@ -513,18 +550,27 @@ public class GameView extends SurfaceView implements Runnable {
                         action == MotionEvent.ACTION_POINTER_UP
         ) ? e.getActionIndex() : -1;
 
+        RectF leftRect = getLeftButtonRect();
+        RectF rightRect = getRightButtonRect();
+        RectF jumpRect = getJumpButtonRect();
+
         for (int i = 0; i < e.getPointerCount(); i++) {
             if (i == skip) {
                 continue;
             }
 
             float x = e.getX(i);
+            float y = e.getY(i);
 
-            if (x < sw * 0.25f) {
+            if (leftRect.contains(x, y)) {
                 l = true;
-            } else if (x < sw * 0.5f) {
+            }
+
+            if (rightRect.contains(x, y)) {
                 r = true;
-            } else {
+            }
+
+            if (jumpRect.contains(x, y)) {
                 j = true;
             }
         }
