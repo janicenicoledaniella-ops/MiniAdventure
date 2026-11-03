@@ -1,6 +1,7 @@
-package com.example.miniadventure; // ganti sesuai package project kamu
+package com.example.miniadventure;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -8,275 +9,590 @@ import android.graphics.RectF;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
-
-import java.util.ArrayList;
-import java.util.List;
+import android.graphics.Bitmap;
 
 public class GameView extends SurfaceView implements Runnable {
 
-    // ====== STATE GAME ======
-    private static final int PLAYING = 0, GAME_OVER = 1, WIN = 2;
-    private int state = PLAYING;
+    private static final int PLAYING = 0;
+    private static final int GAME_OVER = 1;
+
+    private volatile int state = PLAYING;
 
     private Thread thread;
     private volatile boolean running;
+    private volatile boolean restartRequested;
+
     private final SurfaceHolder holder;
-    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-    // ====== UKURAN ======
-    private float u;          // 1 unit = tinggi layar / 12 (supaya game sama di semua HP)
-    private int sw, sh;       // lebar & tinggi layar
-    private boolean levelBuilt = false;
+    private final Paint paint =
+            new Paint(Paint.ANTI_ALIAS_FLAG);
 
-    // ====== PLAYER ======
-    private float px, py, vx, vy, pw, ph;
-    private boolean onGround;
-    private volatile boolean left, right, jumpPressed;
-    private int score, lives;
+    private final Player player = new Player();
+    private final World world = new World();
+
+    private final SharedPreferences preferences;
+
+    private final Assets assets;
+
+    // Menghubungkan input layar dengan game thread.
+    private final Object inputLock = new Object();
+
+    private boolean left;
+    private boolean right;
+    private boolean jumpHeld;
+    private boolean jumpRequested;
+
+    private float u;
+    private int sw, sh;
+
+    private boolean levelBuilt;
+
+    private int lives;
+    private int round;
+    private int highScore;
+
     private float camX;
-
-    // ====== DUNIA ======
-    private final List<RectF> platforms = new ArrayList<>();
-    private final List<RectF> coins = new ArrayList<>();
-    private final List<Enemy> enemies = new ArrayList<>();
-    private RectF goal;
-
-    private static class Enemy {
-        RectF rect; float minX, maxX, dir = 1; boolean alive = true;
-        Enemy(RectF r, float minX, float maxX) { rect = r; this.minX = minX; this.maxX = maxX; }
-    }
+    private float speedMultiplier = 1f;
 
     public GameView(Context context) {
         super(context);
+
         holder = getHolder();
+        assets = new Assets(context);
+
+        preferences = context.getSharedPreferences(
+                "MiniAdventureData",
+                Context.MODE_PRIVATE
+        );
+
+        highScore = preferences.getInt("highScore", 0);
     }
 
-    // ====== LEVEL (semua angka dalam satuan 'unit', edit di sini untuk bikin level baru) ======
-    private void buildLevel() {
-        platforms.clear(); coins.clear(); enemies.clear();
+    private void clearInput() {
+        synchronized (inputLock) {
+            left = false;
+            right = false;
+            jumpHeld = false;
+            jumpRequested = false;
+        }
+    }
 
-        // Tanah (x, lebar). Celah di antaranya = jurang
-        float[][] ground = {{0, 15}, {18, 12}, {34, 16}, {53, 20}};
-        for (float[] g : ground)
-            platforms.add(new RectF(g[0] * u, 9 * u, (g[0] + g[1]) * u, 12 * u));
+    // Permainan baru: skor, nyawa, dan putaran direset.
+    private void startNewGame() {
+        world.resetScore();
 
-        // Platform melayang (x, y, lebar)
-        float[][] floating = {{8, 6.5f, 4}, {20, 6, 3}, {24, 4.5f, 3}, {38, 6.5f, 4}, {44, 5, 3}, {58, 6, 4}};
-        for (float[] f : floating)
-            platforms.add(new RectF(f[0] * u, f[1] * u, (f[0] + f[2]) * u, (f[1] + 0.5f) * u));
+        lives = 3;
+        round = 1;
+        speedMultiplier = 1f;
 
-        // Koin (x, y)
-        float[][] coinPos = {{5, 8}, {9, 5.5f}, {10, 5.5f}, {16.5f, 6}, {21, 5}, {25, 3.5f},
-                {26, 3.5f}, {32, 6}, {39, 5.5f}, {45, 4}, {59, 5}, {60, 5}};
-        for (float[] c : coinPos)
-            coins.add(new RectF(c[0] * u, c[1] * u, (c[0] + 0.5f) * u, (c[1] + 0.5f) * u));
+        assets.setBackgroundByRound(round);
+        buildRound();
 
-        // Musuh (x awal, batas kiri, batas kanan) -- berjalan di atas tanah
-        float[][] en = {{12, 10, 14}, {24, 20, 28}, {42, 36, 48}, {60, 55, 70}};
-        for (float[] e : en)
-            enemies.add(new Enemy(new RectF(e[0] * u, 8.2f * u, (e[0] + 0.8f) * u, 9 * u), e[1] * u, e[2] * u));
+        state = PLAYING;
+    }
 
-        goal = new RectF(71 * u, 6 * u, 72 * u, 9 * u); // bendera finish
+    // Putaran baru: skor dan nyawa tidak direset.
+    private void buildRound() {
+        // World membuat susunan baru berdasarkan nomor putaran.
+    // Kecepatan musuh juga diatur oleh World.
+        world.buildLevel(u, round);
+
         resetPlayer();
     }
 
     private void resetPlayer() {
-        pw = 0.8f * u; ph = 1.0f * u;
-        px = 1 * u; py = 7 * u; vx = vy = 0; camX = 0;
+        clearInput();
+
+        player.reset(u);
+        player.setSpeedMultiplier(1f);
+
+        camX = 0;
     }
 
-    private void restartGame() {
-        score = 0; lives = 3; state = PLAYING;
-        buildLevel();
+    private void nextRound() {
+        round++;
+
+        // Kecepatan naik 10% dari kecepatan dasar setiap putaran.
+        speedMultiplier = 1f + (round - 1) * 0.08f;
+
+        assets.setBackgroundByRound(round);
+        buildRound();
     }
 
-    // ====== GAME LOOP ======
     @Override
     public void run() {
         long last = System.nanoTime();
-        while (running) {
-            if (!holder.getSurface().isValid()) continue;
 
-            if (!levelBuilt) { // tunggu ukuran layar siap
-                sw = getWidth(); sh = getHeight();
-                if (sw == 0) continue;
+        while (running) {
+            if (!holder.getSurface().isValid()) {
+                last = System.nanoTime();
+                continue;
+            }
+
+            if (!levelBuilt) {
+                sw = getWidth();
+                sh = getHeight();
+
+                if (sw == 0 || sh == 0) {
+                    last = System.nanoTime();
+                    continue;
+                }
+
                 u = sh / 12f;
                 levelBuilt = true;
-                restartGame();
+
+                assets.load(u);
+                assets.setBackgroundByRound(round);
+                startNewGame();
+
+                last = System.nanoTime();
             }
 
             long now = System.nanoTime();
-            float dt = Math.min((now - last) / 1_000_000_000f, 0.033f);
+
+            float dt = Math.min(
+                    (now - last) / 1_000_000_000f,
+                    0.033f
+            );
+
             last = now;
 
-            if (state == PLAYING) update(dt);
+            if (restartRequested) {
+                restartRequested = false;
+                startNewGame();
+            }
+
+            if (state == PLAYING) {
+                // Langkah kecil untuk menjaga ketelitian tabrakan.
+                int steps = Math.max(
+                        1,
+                        (int) Math.ceil(
+                                dt * speedMultiplier / (1f / 120f)
+                        )
+                );
+
+                float stepDt = dt / steps;
+
+                for (int i = 0; i < steps; i++) {
+                    if (state != PLAYING) {
+                        break;
+                    }
+
+                    if (update(stepDt)) {
+                        break;
+                    }
+                }
+            }
+
             draw();
         }
     }
 
-    // ====== UPDATE ======
-    private void update(float dt) {
-        float speed = 6f * u, gravity = 30f * u, jumpPower = 15f * u;
+    // True berarti terjadi perpindahan putaran atau kehilangan nyawa.
+    private boolean update(float dt) {
+        int direction;
+        boolean jump;
 
-        // input horizontal
-        vx = 0;
-        if (left) vx = -speed;
-        if (right) vx = speed;
+        synchronized (inputLock) {
+            direction = (right ? 1 : 0) - (left ? 1 : 0);
 
-        // lompat
-        if (jumpPressed && onGround) { vy = -jumpPower; onGround = false; }
-        vy += gravity * dt;
-
-        // gerak sumbu X lalu cek tabrakan
-        px += vx * dt;
-        if (px < 0) px = 0;
-        RectF p = playerRect();
-        for (RectF plat : platforms) {
-            if (RectF.intersects(p, plat)) {
-                if (vx > 0) px = plat.left - pw;
-                else if (vx < 0) px = plat.right;
-                p = playerRect();
-            }
+            jump = jumpRequested;
+            jumpRequested = false;
         }
 
-        // gerak sumbu Y lalu cek tabrakan
-        py += vy * dt;
-        onGround = false;
-        p = playerRect();
-        for (RectF plat : platforms) {
-            if (RectF.intersects(p, plat)) {
-                if (vy > 0) { py = plat.top - ph; onGround = true; }
-                else if (vy < 0) py = plat.bottom;
-                vy = 0;
-                p = playerRect();
-            }
+        player.setDirection(direction);
+
+        if (jump) {
+            player.requestJump();
         }
 
-        // jatuh ke jurang
-        if (py > 14 * u) loseLife();
+        float previousBottom = player.y + player.h;
 
-        // koin
-        for (int i = coins.size() - 1; i >= 0; i--)
-            if (RectF.intersects(p, coins.get(i))) { coins.remove(i); score += 10; }
+        player.update(dt, u, world.platforms);
 
-        // musuh
-        for (Enemy e : enemies) {
-            if (!e.alive) continue;
-            e.rect.offset(e.dir * 2f * u * dt, 0);
-            if (e.rect.left < e.minX) e.dir = 1;
-            if (e.rect.right > e.maxX) e.dir = -1;
+        RectF p = player.getHitbox(u);
 
-            if (RectF.intersects(p, e.rect)) {
-                if (vy > 0 && p.bottom < e.rect.centerY()) { // diinjak dari atas
-                    e.alive = false; vy = -10f * u; score += 50;
-                } else {
-                    loseLife(); break;
-                }
-            }
+        if (player.hasFallen(u)) {
+            loseLife();
+            return true;
         }
 
-        // finish
-        if (RectF.intersects(p, goal)) state = WIN;
+        world.collectCoins(p);
+        world.updateEnemies(dt, u);
 
-        // kamera mengikuti pemain
-        camX = Math.max(0, px - sw * 0.35f);
+        // Injak dari atas: musuh hilang dan pemain memantul.
+        Enemy stomped = world.stompEnemy(
+                p,
+                previousBottom,
+                p.bottom > previousBottom
+        );
+
+        if (stomped != null) {
+            player.y = stomped.rect.top - player.h;
+            player.vy = -10f * u;
+            player.onGround = false;
+
+            p = player.getHitbox(u);
+        }
+
+        // Tabrak samping atau bawah: nyawa berkurang.
+        if (world.hitsEnemy(p)) {
+            loseLife();
+            return true;
+        }
+
+        // Bendera langsung memulai putaran berikutnya.
+        if (RectF.intersects(p, world.goal)) {
+            nextRound();
+            return true;
+        }
+
+        camX = player.getCameraX(sw);
+
+        return false;
     }
-
-    private RectF playerRect() { return new RectF(px, py, px + pw, py + ph); }
 
     private void loseLife() {
         lives--;
-        if (lives <= 0) state = GAME_OVER;
-        else resetPlayer();
+
+        if (lives <= 0) {
+            lives = 0;
+            finishGame();
+        } else {
+            // Skor, putaran, dan kecepatan tetap.
+            // Koin yang diambil dan musuh yang kalah tetap hilang.
+            resetPlayer();
+        }
     }
 
-    // ====== GAMBAR ======
+    private void finishGame() {
+        int totalScore = world.getScore();
+
+        if (totalScore > highScore) {
+            highScore = totalScore;
+
+            preferences.edit()
+                    .putInt("highScore", highScore)
+                    .apply();
+        }
+
+        clearInput();
+        state = GAME_OVER;
+    }
+
     private void draw() {
         Canvas c = holder.lockCanvas();
-        if (c == null) return;
+
+        if (c == null) {
+            return;
+        }
+
         try {
-            c.drawColor(Color.rgb(135, 206, 235)); // langit
+            c.drawColor(Color.rgb(135, 206, 235));
+
+            // Background
+            assets.drawBackground(c, sw, sh, camX);
 
             c.save();
             c.translate(-camX, 0);
 
-            paint.setColor(Color.rgb(76, 160, 60)); // platform
-            for (RectF r : platforms) c.drawRect(r, paint);
+            // Tanah dan platform.
+            for (RectF platform : world.platforms) {
+                assets.drawPlatform(c, platform, u);
+            }
 
-            paint.setColor(Color.YELLOW); // koin
-            for (RectF r : coins) c.drawCircle(r.centerX(), r.centerY(), r.width() / 2, paint);
+            // Koin.
+            for (RectF coin : world.coins) {
+                assets.drawCoin(c, coin);
+            }
 
-            paint.setColor(Color.RED); // musuh
-            for (Enemy e : enemies) if (e.alive) c.drawRect(e.rect, paint);
+            // Musuh.
+            paint.setColor(Color.RED);
+            for (Enemy enemy : world.enemies) {
+                c.drawRect(enemy.rect, paint);
+            }
 
-            paint.setColor(Color.WHITE); // bendera
-            c.drawRect(goal, paint);
-            paint.setColor(Color.MAGENTA);
-            c.drawRect(goal.left, goal.top, goal.right + u, goal.top + u, paint);
+            // Bendera.
+            if (assets.flagBmp != null) {
+                float flagWidth = 2.0f * u;
+                float flagHeight = 2.5f * u;
 
-            paint.setColor(Color.rgb(30, 80, 220)); // pemain
-            c.drawRect(px, py, px + pw, py + ph, paint);
+                float flagLeft = world.goal.centerX() - flagWidth / 2f;
+                float flagBottom = world.goal.bottom;
+
+                RectF flagRect = new RectF(
+                        flagLeft,
+                        flagBottom - flagHeight,
+                        flagLeft + flagWidth,
+                        flagBottom
+                );
+
+                c.drawBitmap(
+                        assets.flagBmp,
+                        null,
+                        flagRect,
+                        paint
+                );
+            }
+
+            // Pemain.
+            assets.drawPlayer(c, player);
 
             c.restore();
 
-            // HUD
-            paint.setColor(Color.BLACK);
-            paint.setTextSize(u * 0.7f);
-            paint.setTextAlign(Paint.Align.LEFT);
-            c.drawText("Skor: " + score + "   Nyawa: " + lives, u * 0.5f, u, paint);
+            drawHud(c);
+            drawControls(c);
 
-            // petunjuk tombol (kiri bawah = gerak, kanan = lompat)
-            paint.setColor(Color.argb(60, 0, 0, 0));
-            c.drawRect(0, sh - 2.5f * u, sw * 0.25f, sh, paint);
-            c.drawRect(sw * 0.25f, sh - 2.5f * u, sw * 0.5f, sh, paint);
-            c.drawRect(sw * 0.5f, 0, sw, sh, paint);
-            paint.setColor(Color.WHITE);
-            paint.setTextAlign(Paint.Align.CENTER);
-            c.drawText("<", sw * 0.125f, sh - u, paint);
-            c.drawText(">", sw * 0.375f, sh - u, paint);
-            c.drawText("LOMPAT", sw * 0.75f, sh - u, paint);
-
-            if (state != PLAYING) {
-                paint.setColor(Color.argb(160, 0, 0, 0));
-                c.drawRect(0, 0, sw, sh, paint);
-                paint.setColor(Color.WHITE);
-                paint.setTextSize(u * 1.4f);
-                c.drawText(state == WIN ? "KAMU MENANG!" : "GAME OVER", sw / 2f, sh / 2f, paint);
-                paint.setTextSize(u * 0.7f);
-                c.drawText("Skor: " + score + "  -  Tap untuk main lagi", sw / 2f, sh / 2f + u * 1.2f, paint);
+            if (state == GAME_OVER) {
+                drawGameOver(c);
             }
         } finally {
             holder.unlockCanvasAndPost(c);
         }
     }
 
-    // ====== INPUT SENTUH (multi-touch) ======
+    private void drawHud(Canvas c) {
+        paint.setColor(Color.BLACK);
+        paint.setTextSize(u * 0.55f);
+        paint.setTextAlign(Paint.Align.LEFT);
+
+        float iconSize = u * 1.0f;
+        float hudY = u * 0.85f;
+
+        RectF coinIcon = new RectF(
+                u * 0.5f,
+                u * 0.15f,
+                u * 1.5f,
+                u * 1.15f
+        );
+
+        assets.drawCoinIcon(c, coinIcon);
+
+        c.drawText(
+                String.valueOf(world.getScore()),
+                u * 1.65f,
+                hudY,
+                paint
+        );
+
+        Bitmap heart;
+
+        if (lives >= 3) {
+            heart = assets.heart1Bmp;
+        } else if (lives == 2) {
+            heart = assets.heart2Bmp;
+        } else {
+            heart = assets.heart3Bmp;
+        }
+
+        if (heart != null) {
+            float heartWidth = u * 2.4f;
+            float heartHeight = u * 0.8f;
+
+            RectF heartRect = new RectF(
+                    u * 2.8f,
+                    u * 0.15f,
+                    u * 2.8f + heartWidth,
+                    u * 0.15f + heartHeight
+            );
+
+            c.drawBitmap(
+                    heart,
+                    null,
+                    heartRect,
+                    paint
+            );
+        }
+
+        c.drawText(
+                "Putaran: " + round,
+                u * 5.5f,
+                hudY,
+                paint
+        );
+    }
+
+    private RectF getLeftButtonRect() {
+        float buttonSize = 1.4f * u;
+        float centerX = sw * 0.125f;
+        float top = sh - 1.75f * u;
+
+        return new RectF(
+                centerX - buttonSize / 2f,
+                top,
+                centerX + buttonSize / 2f,
+                top + buttonSize
+        );
+    }
+
+    private RectF getRightButtonRect() {
+        float buttonSize = 1.4f * u;
+        float centerX = sw * 0.375f;
+        float top = sh - 1.75f * u;
+
+        return new RectF(
+                centerX - buttonSize / 2f,
+                top,
+                centerX + buttonSize / 2f,
+                top + buttonSize
+        );
+    }
+
+    private RectF getJumpButtonRect() {
+        float buttonSize = 1.4f * u;
+        float centerX = sw * 0.75f;
+        float top = sh - 1.75f * u;
+
+        return new RectF(
+                centerX - buttonSize / 2f,
+                top,
+                centerX + buttonSize / 2f,
+                top + buttonSize
+        );
+    }
+
+    private void drawControls(Canvas c) {
+        if (assets.leftArrowBmp != null) {
+            c.drawBitmap(
+                    assets.leftArrowBmp,
+                    null,
+                    getLeftButtonRect(),
+                    paint
+            );
+        }
+
+        if (assets.rightArrowBmp != null) {
+            c.drawBitmap(
+                    assets.rightArrowBmp,
+                    null,
+                    getRightButtonRect(),
+                    paint
+            );
+        }
+
+        if (assets.jumpArrowBmp != null) {
+            c.drawBitmap(
+                    assets.jumpArrowBmp,
+                    null,
+                    getJumpButtonRect(),
+                    paint
+            );
+        }
+    }
+
+    private void drawGameOver(Canvas c) {
+        paint.setColor(Color.argb(190, 0, 0, 0));
+        c.drawRect(0, 0, sw, sh, paint);
+
+        paint.setColor(Color.WHITE);
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTextSize(u * 1.1f);
+
+        c.drawText(
+                "GAME OVER",
+                sw / 2f,
+                sh / 2f - 1.5f * u,
+                paint
+        );
+
+        paint.setTextSize(u * 0.7f);
+
+        c.drawText(
+                "Total Score: " + world.getScore(),
+                sw / 2f,
+                sh / 2f,
+                paint
+        );
+
+        c.drawText(
+                "High Score: " + highScore,
+                sw / 2f,
+                sh / 2f + u,
+                paint
+        );
+
+        paint.setTextSize(u * 0.55f);
+
+        c.drawText(
+                "Tap untuk main lagi",
+                sw / 2f,
+                sh / 2f + 2.2f * u,
+                paint
+        );
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent e) {
         int action = e.getActionMasked();
 
-        if (state != PLAYING) {
-            if (action == MotionEvent.ACTION_DOWN) restartGame();
+        if (state == GAME_OVER) {
+            if (action == MotionEvent.ACTION_DOWN) {
+                restartRequested = true;
+            }
             return true;
         }
 
-        boolean l = false, r = false, j = false;
-        int skip = (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP
-                || action == MotionEvent.ACTION_CANCEL) ? e.getActionIndex() : -1;
+        if (action == MotionEvent.ACTION_CANCEL) {
+            clearInput();
+            return true;
+        }
+
+        boolean newJumpPress =
+                action == MotionEvent.ACTION_DOWN ||
+                        action == MotionEvent.ACTION_POINTER_DOWN;
+
+        boolean l = false;
+        boolean r = false;
+        boolean j = false;
+
+        int skip = (
+                action == MotionEvent.ACTION_UP ||
+                        action == MotionEvent.ACTION_POINTER_UP
+        ) ? e.getActionIndex() : -1;
+
+        RectF leftRect = getLeftButtonRect();
+        RectF rightRect = getRightButtonRect();
+        RectF jumpRect = getJumpButtonRect();
 
         for (int i = 0; i < e.getPointerCount(); i++) {
-            if (i == skip) continue;
+            if (i == skip) {
+                continue;
+            }
+
             float x = e.getX(i);
-            if (x < sw * 0.25f) l = true;
-            else if (x < sw * 0.5f) r = true;
-            else j = true;
+            float y = e.getY(i);
+
+            if (leftRect.contains(x, y)) {
+                l = true;
+            }
+
+            if (rightRect.contains(x, y)) {
+                r = true;
+            }
+
+            if (jumpRect.contains(x, y)) {
+                j = true;
+            }
         }
-        left = l; right = r; jumpPressed = j;
+
+        synchronized (inputLock) {
+            if (newJumpPress && j && !jumpHeld) {
+                jumpRequested = true;
+            }
+
+            left = l;
+            right = r;
+            jumpHeld = j;
+        }
+
         return true;
     }
 
-    // ====== LIFECYCLE ======
     public void resume() {
+        if (running) {
+            return;
+        }
+
         running = true;
         thread = new Thread(this);
         thread.start();
@@ -284,6 +600,15 @@ public class GameView extends SurfaceView implements Runnable {
 
     public void pause() {
         running = false;
-        try { if (thread != null) thread.join(); } catch (InterruptedException ignored) { }
+
+        try {
+            if (thread != null) {
+                thread.join();
+            }
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
+
+        clearInput();
     }
 }
