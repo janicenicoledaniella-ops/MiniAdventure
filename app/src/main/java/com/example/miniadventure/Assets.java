@@ -17,11 +17,14 @@ public class Assets {
     private final Context context;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
+    private Bitmap gameOverBmp;
+    private Bitmap retryBmp;
     private Bitmap[] backgrounds = new Bitmap[3];
     private int currentBgIndex = 0;
 
     public Bitmap flagBmp;
 
+    public Bitmap enemyBmp;
     public Bitmap leftArrowBmp;
     public Bitmap rightArrowBmp;
     public Bitmap jumpArrowBmp;
@@ -86,6 +89,11 @@ public class Assets {
 
         jumpArrowBmp = BitmapFactory.decodeResource(
                 context.getResources(), R.drawable.jump_arrow
+        );
+
+        enemyBmp = BitmapFactory.decodeResource(
+                context.getResources(),
+                R.drawable.enemy
         );
 
         Bitmap rawFlag = BitmapFactory.decodeResource(
@@ -247,10 +255,26 @@ public class Assets {
     }
 
     public void drawEnemy(Canvas c, Enemy e) {
-        paint.setColor(Color.RED);
-        c.drawRect(e.rect, paint);
-    }
+        if (enemyBmp != null) {
+            paint.setColor(Color.WHITE);
 
+            float width = e.rect.width() * 2.5f;
+            float height = e.rect.height() * 2.5f;
+            float bottom = e.rect.bottom + e.rect.height() * 0.6f;
+
+            RectF dst = new RectF(
+                    e.rect.centerX() - width / 2f,
+                    bottom - height,
+                    e.rect.centerX() + width / 2f,
+                    bottom
+            );
+
+            c.drawBitmap(enemyBmp, null, dst, paint);
+        } else {
+            paint.setColor(Color.RED);
+            c.drawRect(e.rect, paint);
+        }
+    }
     public void drawPlayer(Canvas c, Player p) {
         if (playerBmp != null) {
             c.drawBitmap(playerBmp, p.x, p.y, paint);

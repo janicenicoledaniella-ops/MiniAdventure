@@ -10,12 +10,15 @@ import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 
 public class GameView extends SurfaceView implements Runnable {
 
     private static final int PLAYING = 0;
     private static final int GAME_OVER = 1;
 
+    private Bitmap gameOverBmp;
+    private Bitmap retryBmp;
     private volatile int state = PLAYING;
 
     private Thread thread;
@@ -40,7 +43,7 @@ public class GameView extends SurfaceView implements Runnable {
     private boolean left;
     private boolean right;
     private boolean jumpHeld;
-    private boolean jumpRequested
+    private boolean jumpRequested;
 
     private float u;
     private int sw, sh;
@@ -59,6 +62,16 @@ public class GameView extends SurfaceView implements Runnable {
 
         holder = getHolder();
         assets = new Assets(context);
+
+        gameOverBmp = BitmapFactory.decodeResource(
+                getResources(),
+                R.drawable.game_over
+        );
+
+        retryBmp = BitmapFactory.decodeResource(
+                getResources(),
+                R.drawable.retry
+        );
 
         preferences = context.getSharedPreferences(
                 "MiniAdventureData",
@@ -307,9 +320,8 @@ public class GameView extends SurfaceView implements Runnable {
             }
 
             // Musuh.
-            paint.setColor(Color.RED);
             for (Enemy enemy : world.enemies) {
-                c.drawRect(enemy.rect, paint);
+                assets.drawEnemy(c, enemy);
             }
 
             // Bendera.
@@ -404,12 +416,136 @@ public class GameView extends SurfaceView implements Runnable {
             );
         }
 
-        c.drawText(
-                "Putaran: " + round,
-                u * 5.5f,
-                hudY,
+        drawLevelBadge(c);
+    }
+
+    private void drawLevelBadge(Canvas c) {
+        float badgeWidth = 3.2f * u;
+        float badgeHeight = 0.95f * u;
+
+        float left = 5.5f * u;
+        float top = 0.15f * u;
+
+        RectF badge = new RectF(
+                left,
+                top,
+                left + badgeWidth,
+                top + badgeHeight
+        );
+
+        int badgeColor;
+        int borderColor;
+
+        if (round <= 5) {
+            // Bronze
+            badgeColor = Color.rgb(166, 95, 45);
+            borderColor = Color.rgb(105, 55, 25);
+
+        } else if (round <= 10) {
+            // Silver
+            badgeColor = Color.rgb(150, 160, 175);
+            borderColor = Color.rgb(85, 95, 110);
+
+        } else if (round <= 20) {
+            // Gold
+            badgeColor = Color.rgb(220, 165, 35);
+            borderColor = Color.rgb(145, 100, 15);
+
+        } else {
+            // Diamond
+            badgeColor = Color.rgb(45, 165, 195);
+            borderColor = Color.rgb(15, 95, 130);
+        }
+
+        // Border badge.
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(borderColor);
+
+        c.drawRoundRect(
+                badge,
+                0.2f * u,
+                0.2f * u,
                 paint
         );
+
+        // Background badge.
+        RectF inner = new RectF(
+                badge.left + 0.05f * u,
+                badge.top + 0.05f * u,
+                badge.right - 0.05f * u,
+                badge.bottom - 0.05f * u
+        );
+
+        paint.setColor(badgeColor);
+
+        c.drawRoundRect(
+                inner,
+                0.18f * u,
+                0.18f * u,
+                paint
+        );
+
+        // Emblem diamond.
+        float centerX = left + 0.48f * u;
+        float centerY = top + badgeHeight / 2f;
+        float diamondSize = 0.22f * u;
+
+        paint.setColor(Color.WHITE);
+
+        c.save();
+        c.rotate(45, centerX, centerY);
+
+        c.drawRect(
+                centerX - diamondSize,
+                centerY - diamondSize,
+                centerX + diamondSize,
+                centerY + diamondSize,
+                paint
+        );
+
+        c.restore();
+
+        // Label LV.
+        paint.setColor(Color.WHITE);
+        paint.setFakeBoldText(true);
+        paint.setTextAlign(Paint.Align.LEFT);
+
+        float textSize = 0.38f * u;
+        paint.setTextSize(textSize);
+
+        float baseline = top + 0.61f * u;
+
+        c.drawText(
+                "LV.",
+                left + 0.85f * u,
+                baseline,
+                paint
+        );
+
+        // Angka level yang terus bertambah.
+        String levelText = String.valueOf(round);
+
+        float numberSize = 0.48f * u;
+        paint.setTextSize(numberSize);
+
+        float maxTextWidth = 1.45f * u;
+
+        while (paint.measureText(levelText) > maxTextWidth
+                && numberSize > 0.22f * u) {
+
+            numberSize -= 0.02f * u;
+            paint.setTextSize(numberSize);
+        }
+
+        c.drawText(
+                levelText,
+                left + 1.55f * u,
+                baseline,
+                paint
+        );
+
+        paint.setFakeBoldText(false);
+        paint.setStyle(Paint.Style.FILL);
     }
 
     private RectF getLeftButtonRect() {
@@ -481,44 +617,261 @@ public class GameView extends SurfaceView implements Runnable {
     }
 
     private void drawGameOver(Canvas c) {
-        paint.setColor(Color.argb(190, 0, 0, 0));
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.argb(205, 10, 18, 35));
         c.drawRect(0, 0, sw, sh, paint);
+
+        float panelWidth = Math.min(sw * 0.86f, 8.6f * u);
+        float panelHeight = 8.0f * u;
+
+        float panelLeft = (sw - panelWidth) / 2f;
+        float panelTop = (sh - panelHeight) / 2f;
+
+        RectF panel = new RectF(
+                panelLeft,
+                panelTop,
+                panelLeft + panelWidth,
+                panelTop + panelHeight
+        );
+
+        paint.setColor(Color.rgb(35, 48, 75));
+        c.drawRoundRect(
+                panel,
+                0.4f * u,
+                0.4f * u,
+                paint
+        );
+
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(0.09f * u);
+        paint.setColor(Color.rgb(245, 190, 75));
+
+        c.drawRoundRect(
+                panel,
+                0.4f * u,
+                0.4f * u,
+                paint
+        );
+
+        paint.setStyle(Paint.Style.FILL);
+
+        // Gambar GAME OVER.
+        float bannerWidth = Math.min(panelWidth * 0.75f, 5.5f * u);
+        float bannerHeight = 1.5f * u;
+
+        RectF bannerRect = new RectF(
+                sw / 2f - bannerWidth / 2f,
+                panelTop + 0.25f * u,
+                sw / 2f + bannerWidth / 2f,
+                panelTop + 0.25f * u + bannerHeight
+        );
+
+        if (gameOverBmp != null) {
+            c.drawBitmap(
+                    gameOverBmp,
+                    null,
+                    bannerRect,
+                    paint
+            );
+        } else {
+            paint.setColor(Color.WHITE);
+            paint.setTextSize(0.9f * u);
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setFakeBoldText(true);
+
+            c.drawText(
+                    "GAME OVER",
+                    sw / 2f,
+                    panelTop + 1.3f * u,
+                    paint
+            );
+
+            paint.setFakeBoldText(false);
+        }
+
+        // Badge level terakhir.
+        drawGameOverLevelBadge(
+                c,
+                sw / 2f,
+                panelTop + 2.05f * u
+        );
+
+        // Total koin.
+        float coinSize = 0.85f * u;
+        float coinY = panelTop + 3.65f * u;
 
         paint.setColor(Color.WHITE);
         paint.setTextAlign(Paint.Align.CENTER);
-        paint.setTextSize(u * 1.1f);
+        paint.setTextSize(0.48f * u);
+        paint.setFakeBoldText(true);
 
         c.drawText(
-                "GAME OVER",
+                "TOTAL KOIN",
                 sw / 2f,
-                sh / 2f - 1.5f * u,
+                coinY,
                 paint
         );
 
-        paint.setTextSize(u * 0.7f);
+        RectF coinRect = new RectF(
+                sw / 2f - 1.1f * u,
+                coinY + 0.25f * u,
+                sw / 2f - 1.1f * u + coinSize,
+                coinY + 0.25f * u + coinSize
+        );
+
+        assets.drawCoinIcon(c, coinRect);
+
+        paint.setColor(Color.rgb(255, 215, 90));
+        paint.setTextAlign(Paint.Align.LEFT);
+        paint.setTextSize(0.75f * u);
 
         c.drawText(
-                "Total Score: " + world.getScore(),
-                sw / 2f,
-                sh / 2f,
+                String.valueOf(world.getScore()),
+                coinRect.right + 0.2f * u,
+                coinRect.centerY() + 0.25f * u,
                 paint
         );
 
+        // Highest score.
+        float highY = panelTop + 5.35f * u;
+
+        paint.setColor(Color.WHITE);
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTextSize(0.48f * u);
+
         c.drawText(
-                "High Score: " + highScore,
+                "HIGHEST SCORE",
                 sw / 2f,
-                sh / 2f + u,
+                highY,
                 paint
         );
 
-        paint.setTextSize(u * 0.55f);
+        paint.setColor(Color.rgb(255, 215, 90));
+        paint.setTextSize(0.75f * u);
 
         c.drawText(
-                "Tap untuk main lagi",
+                String.valueOf(highScore),
                 sw / 2f,
-                sh / 2f + 2.2f * u,
+                highY + 0.8f * u,
                 paint
         );
+
+        // Tombol retry.
+        float retryWidth = 2.8f * u;
+        float retryHeight = 1.15f * u;
+
+        RectF retryRect = new RectF(
+                sw / 2f - retryWidth / 2f,
+                panelTop + 6.45f * u,
+                sw / 2f + retryWidth / 2f,
+                panelTop + 6.45f * u + retryHeight
+        );
+
+        if (retryBmp != null) {
+            c.drawBitmap(
+                    retryBmp,
+                    null,
+                    retryRect,
+                    paint
+            );
+        } else {
+            paint.setColor(Color.rgb(220, 155, 40));
+
+            c.drawRoundRect(
+                    retryRect,
+                    0.2f * u,
+                    0.2f * u,
+                    paint
+            );
+
+            paint.setColor(Color.WHITE);
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(0.5f * u);
+
+            c.drawText(
+                    "RETRY",
+                    sw / 2f,
+                    retryRect.centerY() + 0.17f * u,
+                    paint
+            );
+        }
+
+        paint.setFakeBoldText(false);
+        paint.setTextAlign(Paint.Align.LEFT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawGameOverLevelBadge(
+            Canvas c,
+            float centerX,
+            float top
+    ) {
+        float width = 3.5f * u;
+        float height = 1.05f * u;
+
+        RectF badge = new RectF(
+                centerX - width / 2f,
+                top,
+                centerX + width / 2f,
+                top + height
+        );
+
+        int background;
+        int border;
+
+        if (round <= 5) {
+            background = Color.rgb(166, 95, 45);
+            border = Color.rgb(105, 55, 25);
+        } else if (round <= 10) {
+            background = Color.rgb(150, 160, 175);
+            border = Color.rgb(85, 95, 110);
+        } else if (round <= 20) {
+            background = Color.rgb(220, 165, 35);
+            border = Color.rgb(145, 100, 15);
+        } else {
+            background = Color.rgb(45, 165, 195);
+            border = Color.rgb(15, 95, 130);
+        }
+
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(border);
+
+        c.drawRoundRect(
+                badge,
+                0.2f * u,
+                0.2f * u,
+                paint
+        );
+
+        RectF inner = new RectF(
+                badge.left + 0.05f * u,
+                badge.top + 0.05f * u,
+                badge.right - 0.05f * u,
+                badge.bottom - 0.05f * u
+        );
+
+        paint.setColor(background);
+
+        c.drawRoundRect(
+                inner,
+                0.17f * u,
+                0.17f * u,
+                paint
+        );
+
+        paint.setColor(Color.WHITE);
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTextSize(0.48f * u);
+        paint.setFakeBoldText(true);
+
+        c.drawText(
+                "LEVEL " + round,
+                centerX,
+                top + 0.68f * u,
+                paint
+        );
+
+        paint.setFakeBoldText(false);
     }
 
     @Override

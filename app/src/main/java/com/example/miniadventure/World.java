@@ -54,7 +54,7 @@ public class World {
                 4 + Math.min(4, (round - 1) / 3);
 
         float normalGapMax =
-                1.8f + difficulty * 0.7f;
+                1.8f + difficulty * 2.7f;
 
         // Area awal tetap aman tanpa musuh.
         addGround(0, 14, u);
@@ -129,11 +129,11 @@ public class World {
             addGround(x, width, u);
 
             // Platform atas tidak selalu muncul.
+            RectF floatingPlatform = null;
+
             if (random.nextFloat() < 0.65f) {
                 float platformWidth = rand(2f, 3.5f);
 
-                // Sisakan ruang di tepi tanah agar lompatan
-                // menuju jurang tidak terhalang platform.
                 float platformX = x + rand(
                         3,
                         width - platformWidth - 3
@@ -141,12 +141,14 @@ public class World {
 
                 float platformY = rand(6.6f, 7.3f);
 
-                platforms.add(new RectF(
+                floatingPlatform = new RectF(
                         platformX * u,
                         platformY * u,
                         (platformX + platformWidth) * u,
                         (platformY + 0.5f) * u
-                ));
+                );
+
+                platforms.add(floatingPlatform);
 
                 int coinCount =
                         platformWidth >= 3f ? 3 : 2;
@@ -205,6 +207,35 @@ public class World {
                 enemy.setSpeedMultiplier(enemySpeed);
 
                 enemies.add(enemy);
+            }
+            // Musuh tambahan pada floating platform.
+            if (round >= 2 &&
+                    floatingPlatform != null &&
+                    random.nextFloat() < 0.15f + difficulty * 0.35f) {
+
+                float minX = floatingPlatform.left;
+                float maxX = floatingPlatform.right;
+
+                float enemyX = rand(
+                        minX,
+                        maxX - 0.8f * u
+                );
+
+                Enemy platformEnemy = new Enemy(
+                        enemyX,
+                        u,
+                        minX,
+                        maxX
+                );
+
+                platformEnemy.rect.offset(
+                        0,
+                        floatingPlatform.top - platformEnemy.rect.bottom
+                );
+
+                platformEnemy.setSpeedMultiplier(enemySpeed);
+
+                enemies.add(platformEnemy);
             }
 
             end = x + width;
