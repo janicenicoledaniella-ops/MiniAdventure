@@ -40,7 +40,7 @@ public class GameView extends SurfaceView implements Runnable {
     private boolean left;
     private boolean right;
     private boolean jumpHeld;
-    private boolean jumpRequested;
+    private boolean jumpRequested
 
     private float u;
     private int sw, sh;
