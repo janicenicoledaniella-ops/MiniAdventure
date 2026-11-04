@@ -16,10 +16,12 @@ public class GameView extends SurfaceView implements Runnable {
 
     private static final int PLAYING = 0;
     private static final int GAME_OVER = 1;
+    private static final int SELECT_CHARACTER = 2;
 
     private Bitmap gameOverBmp;
     private Bitmap retryBmp;
-    private volatile int state = PLAYING;
+    private volatile int state = SELECT_CHARACTER;
+    private volatile boolean startRequested;
 
     private Thread thread;
     private volatile boolean running;
@@ -36,6 +38,7 @@ public class GameView extends SurfaceView implements Runnable {
     private final SharedPreferences preferences;
 
     private final Assets assets;
+    private final CharacterSelectScreen menu;
 
     // Menghubungkan input layar dengan game thread.
     private final Object inputLock = new Object();
@@ -62,6 +65,7 @@ public class GameView extends SurfaceView implements Runnable {
 
         holder = getHolder();
         assets = new Assets(context);
+        menu = new CharacterSelectScreen(assets);
 
         gameOverBmp = BitmapFactory.decodeResource(
                 getResources(),
@@ -107,7 +111,7 @@ public class GameView extends SurfaceView implements Runnable {
     // Putaran baru: skor dan nyawa tidak direset.
     private void buildRound() {
         // World membuat susunan baru berdasarkan nomor putaran.
-    // Kecepatan musuh juga diatur oleh World.
+        // Kecepatan musuh juga diatur oleh World.
         world.buildLevel(u, round);
 
         resetPlayer();
@@ -155,8 +159,8 @@ public class GameView extends SurfaceView implements Runnable {
                 levelBuilt = true;
 
                 assets.load(u);
-                assets.setBackgroundByRound(round);
-                startNewGame();
+                menu.layout(sw, sh, u);
+                state = SELECT_CHARACTER;
 
                 last = System.nanoTime();
             }
@@ -170,9 +174,20 @@ public class GameView extends SurfaceView implements Runnable {
 
             last = now;
 
+            if (startRequested) {
+                startRequested = false;
+
+                if (state == SELECT_CHARACTER) {
+                    assets.setPlayerCharacter(menu.getSelected());
+                    startNewGame();
+                }
+            }
+
+            // Setelah game over, kembali ke layar pilih karakter.
             if (restartRequested) {
                 restartRequested = false;
-                startNewGame();
+                clearInput();
+                state = SELECT_CHARACTER;
             }
 
             if (state == PLAYING) {
@@ -301,6 +316,11 @@ public class GameView extends SurfaceView implements Runnable {
         }
 
         try {
+            if (state == SELECT_CHARACTER) {
+                menu.draw(c);
+                return;
+            }
+
             c.drawColor(Color.rgb(135, 206, 235));
 
             // Background
@@ -877,6 +897,14 @@ public class GameView extends SurfaceView implements Runnable {
     @Override
     public boolean onTouchEvent(MotionEvent e) {
         int action = e.getActionMasked();
+
+        if (state == SELECT_CHARACTER) {
+            if (action == MotionEvent.ACTION_DOWN
+                    && menu.onTouch(e.getX(), e.getY())) {
+                startRequested = true;
+            }
+            return true;
+        }
 
         if (state == GAME_OVER) {
             if (action == MotionEvent.ACTION_DOWN) {

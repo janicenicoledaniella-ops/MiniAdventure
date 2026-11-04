@@ -39,6 +39,17 @@ public class Assets {
     private Bitmap groundBmp;
     private Bitmap playerBmp;
 
+    // Karakter yang bisa dipilih: 0 = girl 1, 1 = boy 1.
+    private static final int[] CHAR_RES = {
+            R.drawable.chara_girl1,
+            R.drawable.chara_boy1
+    };
+    public static final String[] CHAR_NAMES = {"Girl", "Boy"};
+
+    private final Bitmap[] charGameBmp = new Bitmap[2];     // ukuran di dalam game
+    private final Bitmap[] charPreviewBmp = new Bitmap[2];  // ukuran di layar pilih karakter
+    private boolean facingLeft = false;
+
     public Assets(Context context) {
         this.context = context;
     }
@@ -96,6 +107,8 @@ public class Assets {
                 R.drawable.enemy
         );
 
+        loadCharacters(u);
+
         Bitmap rawFlag = BitmapFactory.decodeResource(
                 context.getResources(),
                 R.drawable.flag
@@ -143,6 +156,41 @@ public class Assets {
 
     }
 
+    // Sprite diperkecil supaya hemat memori.
+    private void loadCharacters(float u) {
+        BitmapFactory.Options opts = new BitmapFactory.Options();
+        opts.inScaled = false;
+
+        for (int i = 0; i < CHAR_RES.length; i++) {
+            Bitmap raw = BitmapFactory.decodeResource(
+                    context.getResources(), CHAR_RES[i], opts);
+            if (raw == null) continue;
+
+            float ratio = (float) raw.getWidth() / raw.getHeight();
+
+            int gameH = Math.round(u * 1.2f);
+            int prevH = Math.round(u * 5.0f);
+
+            charGameBmp[i] = Bitmap.createScaledBitmap(
+                    raw, Math.max(1, Math.round(gameH * ratio)), gameH, true);
+            charPreviewBmp[i] = Bitmap.createScaledBitmap(
+                    raw, Math.max(1, Math.round(prevH * ratio)), prevH, true);
+
+            raw.recycle();
+        }
+    }
+
+    public void setPlayerCharacter(int index) {
+        if (index < 0 || index >= charGameBmp.length) return;
+        playerBmp = charGameBmp[index];
+        facingLeft = false;
+    }
+
+    public void drawCharacterPreview(Canvas c, int index, float cx, float top) {
+        Bitmap b = charPreviewBmp[index];
+        if (b == null) return;
+        c.drawBitmap(b, cx - b.getWidth() / 2f, top, paint);
+    }
     public void setBackgroundByRound(int round) {
         currentBgIndex = (round - 1) % backgrounds.length;
         if (currentBgIndex < 0) {
@@ -277,7 +325,19 @@ public class Assets {
     }
     public void drawPlayer(Canvas c, Player p) {
         if (playerBmp != null) {
-            c.drawBitmap(playerBmp, p.x, p.y, paint);
+            if (p.vx < 0) facingLeft = true;
+            else if (p.vx > 0) facingLeft = false;
+
+            // Sprite berdiri di atas hitbox: tengah horizontal, kaki sejajar dasar.
+            float left = p.x + p.w / 2f - playerBmp.getWidth() / 2f;
+            float top = p.y + p.h - playerBmp.getHeight();
+
+            c.save();
+            if (facingLeft) {
+                c.scale(-1f, 1f, p.x + p.w / 2f, 0f);
+            }
+            c.drawBitmap(playerBmp, left, top, paint);
+            c.restore();
             return;
         }
 
