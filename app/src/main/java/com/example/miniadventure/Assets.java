@@ -39,18 +39,24 @@ public class Assets {
     private Bitmap groundBmp;
     private Bitmap playerBmp;
 
-    // Karakter yang bisa dipilih: 0 = girl 1, 1 = boy 1, 2 = girl 2, 3 = boy 2.
+    // Karakter yang bisa dipilih: 0 = girl 1, 1 = boy 1, 2 = girl 2, 3 = boy 2, 4 = robot.
     private static final int[] CHAR_RES = {
             R.drawable.chara_girl1,
             R.drawable.chara_boy1,
             R.drawable.chara_girl2,
-            R.drawable.chara_boy2
+            R.drawable.chara_boy2,
+            R.drawable.chara_robot
     };
-    public static final String[] CHAR_NAMES = {"Girl 1", "Boy 1", "Girl 2", "Boy 2"};
+    public static final String[] CHAR_NAMES = {"Ryka", "Kairo", "Aveline", "Jax", "Vex-9"};
+
+    // Pengali tinggi tiap karakter (1.0 = tinggi standar), urutannya sama dengan CHAR_RES.
+    // Semua 1f = semua karakter sama tinggi. Naikkan angkanya kalau mau salah satu lebih tinggi.
+    private static final float[] CHAR_SCALE = {1f, 1f, 1f, 1f, 1f};
 
     private final Bitmap[] charGameBmp = new Bitmap[CHAR_RES.length];     // ukuran di dalam game
     private final Bitmap[] charPreviewBmp = new Bitmap[CHAR_RES.length];  // ukuran di layar pilih karakter
     private boolean facingLeft = false;
+    private int previewBaseH = 0;  // tinggi preview standar (pengali 1.0), dipakai untuk menyejajarkan kaki
 
     public Assets(Context context) {
         this.context = context;
@@ -203,8 +209,9 @@ public class Assets {
 
             float ratio = (float) raw.getWidth() / raw.getHeight();
 
-            int gameH = Math.round(u * 1.2f);
-            int prevH = Math.round(u * 5.0f);
+            previewBaseH = Math.round(u * 5.0f);
+            int gameH = Math.round(u * 1.2f * CHAR_SCALE[i]);
+            int prevH = Math.round(u * 5.0f * CHAR_SCALE[i]);
 
             charGameBmp[i] = Bitmap.createScaledBitmap(
                     raw, Math.max(1, Math.round(gameH * ratio)), gameH, true);
@@ -248,7 +255,11 @@ public class Assets {
     public void drawCharacterPreview(Canvas c, int index, float cx, float top) {
         Bitmap b = charPreviewBmp[index];
         if (b == null) return;
-        c.drawBitmap(b, cx - b.getWidth() / 2f, top, paint);
+
+        // 'top' adalah posisi atas untuk tinggi standar; karakter yang lebih tinggi
+        // naik ke atas supaya kakinya tetap di lantai.
+        float y = top + (previewBaseH - b.getHeight());
+        c.drawBitmap(b, cx - b.getWidth() / 2f, y, paint);
     }
     public void setBackgroundByRound(int round) {
         currentBgIndex = (round - 1) % backgrounds.length;

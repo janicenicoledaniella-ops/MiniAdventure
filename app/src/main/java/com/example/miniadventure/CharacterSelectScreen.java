@@ -17,7 +17,7 @@ import android.graphics.Typeface;
  */
 public class CharacterSelectScreen {
 
-    public static final int COUNT = 4;
+    public static final int COUNT = 5;
 
     private static final long POP_NS = 300_000_000L;
     private static final long FLASH_NS = 220_000_000L;
