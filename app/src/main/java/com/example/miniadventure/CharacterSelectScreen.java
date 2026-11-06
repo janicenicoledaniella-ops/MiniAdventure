@@ -17,7 +17,7 @@ import android.graphics.Typeface;
  */
 public class CharacterSelectScreen {
 
-    public static final int COUNT = 2;
+    public static final int COUNT = 4;
 
     private static final long POP_NS = 300_000_000L;
     private static final long FLASH_NS = 220_000_000L;
@@ -28,8 +28,14 @@ public class CharacterSelectScreen {
     private static final float PEDESTAL_Y = 7.65f;
     private static final float ARROW_Y = 5.3f;
     private static final float ARROW_X = 4.3f;
+    private static final float SIDE_GAP = 0.35f;   // jarak karakter samping ke lingkaran panah
+    private static final float SIDE_SCALE = 1.0f;  // 1.0 = sama tinggi dengan karakter utama
+    private static final int GHOST_ALPHA = 135;    // opacity karakter samping (0..255)
 
-    private static final int[] BOKEH = {0xFFFFD36B, 0xFF7FB2FF, 0xFFFF8FB8};
+    // Warna latar: navy blue, terang di tengah dan makin gelap ke pinggir (gradasi melingkar).
+    private static final int NAVY = 0xFF0B1A47;
+    private static final int NAVY_CENTER = 0xFF1C3D8C;
+    private static final int NAVY_EDGE = 0xFF040A22;
 
     private final Assets assets;
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -39,15 +45,14 @@ public class CharacterSelectScreen {
     private Typeface titleFace;
     private CornerPathEffect cornerEffect;
 
-    private LinearGradient bgShader;
+    private RadialGradient bgShader;
     private LinearGradient beamShader;
-    private LinearGradient pedestalShader;
+    private RadialGradient poolShader;
+    private RadialGradient lampShader;
     private LinearGradient titleShader;
     private LinearGradient arrowShader;
     private LinearGradient buttonShader;
-    private RadialGradient horizonShader;
     private RadialGradient spotShader;
-    private RadialGradient vignetteShader;
 
     private float u;
     private int sw, sh;
@@ -76,39 +81,36 @@ public class CharacterSelectScreen {
         titleFace = Typeface.create("sans-serif-black", Typeface.NORMAL);
         cornerEffect = new CornerPathEffect(0.14f * u);
 
-        // Langit malam: biru tua ke ungu.
-        bgShader = new LinearGradient(
-                0, 0, 0, sh,
-                new int[]{0xFF080C28, 0xFF17205A, 0xFF3B2A78},
-                new float[]{0f, 0.6f, 1f},
-                Shader.TileMode.CLAMP);
-
-        // Cahaya hangat dari bawah.
-        horizonShader = new RadialGradient(
-                cx, sh, sw * 0.5f,
-                0x66FF9A4D, 0x00FF9A4D,
-                Shader.TileMode.CLAMP);
-
-        vignetteShader = new RadialGradient(
-                cx, sh / 2f, sw * 0.62f,
-                new int[]{0x00000000, 0xB0000000},
-                new float[]{0.45f, 1f},
-                Shader.TileMode.CLAMP);
-
         // Lampu sorot dan cahaya di belakang karakter.
+        bgShader = new RadialGradient(
+                cx, sh * 0.5f, Math.max(sw * 0.58f, sh * 1.0f),
+                new int[]{NAVY_CENTER, NAVY, NAVY_EDGE},
+                new float[]{0f, 0.5f, 1f},
+                Shader.TileMode.CLAMP);
+
+        // Kerucut lampu sorot: terang di atas, memudar ke bawah.
         beamShader = new LinearGradient(
                 0, 0, 0, PEDESTAL_Y * u,
-                0x44FFF2C8, 0x08FFF2C8,
+                0x88FFF4D0, 0x00FFF4D0,
                 Shader.TileMode.CLAMP);
 
+        // Cahaya hangat tepat di belakang karakter.
         spotShader = new RadialGradient(
                 cx, ARROW_Y * u, 4.6f * u,
-                0xCCFFE08A, 0x00FFE08A,
+                0x99FFE08A, 0x00FFE08A,
                 Shader.TileMode.CLAMP);
 
-        pedestalShader = new LinearGradient(
-                0, (PEDESTAL_Y - 0.42f) * u, 0, (PEDESTAL_Y + 0.42f) * u,
-                0xFF7480CC, 0xFF343C80,
+        // Kolam cahaya di lantai (digepengkan saat digambar).
+        poolShader = new RadialGradient(
+                cx, PEDESTAL_Y * u, 3.7f * u,
+                new int[]{0xE6FFF6D8, 0x66FFE9A8, 0x00FFE9A8},
+                new float[]{0f, 0.55f, 1f},
+                Shader.TileMode.CLAMP);
+
+        // Sumber lampu di tepi atas layar.
+        lampShader = new RadialGradient(
+                cx, 0, 2.4f * u,
+                0xCCFFFBE8, 0x00FFFBE8,
                 Shader.TileMode.CLAMP);
 
         titleShader = new LinearGradient(
@@ -185,7 +187,7 @@ public class CharacterSelectScreen {
 
     public void draw(Canvas c) {
         if (!ready) {
-            c.drawColor(0xFF0B1030);
+            c.drawColor(NAVY);
             return;
         }
 
@@ -199,11 +201,9 @@ public class CharacterSelectScreen {
         p.setPathEffect(null);
 
         drawBackground(c, t);
-        drawBeamAndGlow(c, t);
-        drawPedestal(c, t);
-        drawOrbit(c, t, true);
+        drawSpotlight(c, t);
+        drawSideGhosts(c, t, sel);
         drawCharacter(c, t, sel);
-        drawOrbit(c, t, false);
         drawNameAndDots(c, sel);
 
         drawArrow(c, true, t);
@@ -219,131 +219,80 @@ public class CharacterSelectScreen {
     }
 
     private void drawBackground(Canvas c, float t) {
+        p.setStyle(Paint.Style.FILL);
         p.setShader(bgShader);
         c.drawRect(0, 0, sw, sh, p);
-
-        p.setShader(horizonShader);
-        c.drawRect(0, sh * 0.4f, sw, sh, p);
-        p.setShader(null);
-
-        // Bulatan cahaya yang naik pelan.
-        for (int i = 0; i < 14; i++) {
-            float r = u * (0.12f + 0.28f * ((i * 37) % 10) / 10f);
-            float span = sh + 2 * r;
-            float speed = u * (0.25f + 0.08f * (i % 4));
-            float off = ((i * 131) % 1000) / 1000f * span;
-            float y = sh + r - ((t * speed + off) % span);
-            float x = ((i * 3571) % 1000) / 1000f * sw
-                    + (float) Math.sin(t * 0.6f + i) * 0.3f * u;
-
-            p.setColor((BOKEH[i % 3] & 0x00FFFFFF) | (36 << 24));
-            c.drawCircle(x, y, r, p);
-        }
-
-        // Bintang berkedip.
-        p.setColor(Color.WHITE);
-        for (int i = 0; i < 36; i++) {
-            float sx = ((i * 7919) % 1000) / 1000f * sw;
-            float sy = ((i * 6007) % 1000) / 1000f * sh * 0.7f;
-            float tw = 0.5f + 0.5f * (float) Math.sin(t * 2f + i * 1.7f);
-
-            p.setAlpha((int) (40 + 190 * tw));
-            c.drawCircle(sx, sy, u * (0.03f + 0.04f * tw), p);
-        }
-
-        // Pinggir layar digelapkan.
-        p.setShader(vignetteShader);
-        p.setAlpha(255);
-        c.drawRect(0, 0, sw, sh, p);
         p.setShader(null);
     }
 
-    private void drawBeamAndGlow(Canvas c, float t) {
+    // Lampu sorot dari atas: kerucut cahaya berlapis, lampu di atas, dan kolam cahaya di lantai.
+    private void drawSpotlight(Canvas c, float t) {
         float cx = sw / 2f;
+        float floorY = PEDESTAL_Y * u;
+        float flicker = 0.92f + 0.08f * (float) Math.sin(t * 2.3f);
 
-        path.reset();
-        path.moveTo(cx - 1.1f * u, 0);
-        path.lineTo(cx + 1.1f * u, 0);
-        path.lineTo(cx + 3.4f * u, PEDESTAL_Y * u);
-        path.lineTo(cx - 3.4f * u, PEDESTAL_Y * u);
-        path.close();
+        // Cahaya hangat di belakang karakter.
+        p.setStyle(Paint.Style.FILL);
+        p.setShader(spotShader);
+        p.setAlpha((int) (255 * flicker));
+        c.drawCircle(cx, ARROW_Y * u, 4.6f * u, p);
+
+        // Kerucut cahaya: 3 lapis, makin lebar makin redup, supaya tepinya lembut.
+        float[] topHalf = {1.7f, 1.35f, 1.0f};
+        float[] botHalf = {4.7f, 4.0f, 3.3f};
+        int[] alpha = {70, 110, 150};
 
         p.setShader(beamShader);
-        p.setAlpha(255);
-        c.drawPath(path, p);
-
-        p.setShader(spotShader);
-        p.setAlpha((int) (170 + 40 * Math.sin(t * 2f)));
-        c.drawCircle(cx, ARROW_Y * u, 4.6f * u, p);
-        p.setShader(null);
-    }
-
-    private void drawPedestal(Canvas c, float t) {
-        float cx = sw / 2f;
-        float cy = PEDESTAL_Y * u;
-        float rx = 2.8f * u;
-        float ry = 0.42f * u;
-        float thick = 0.28f * u;
-
-        // Cahaya emas di sekeliling panggung.
-        p.setStyle(Paint.Style.STROKE);
-        float glow = 0.6f + 0.4f * (float) Math.sin(t * 2f);
-        float[] widths = {0.55f, 0.32f, 0.16f};
-        int[] alphas = {16, 28, 50};
         for (int i = 0; i < 3; i++) {
-            p.setStrokeWidth(widths[i] * u);
-            p.setColor(Color.argb((int) (alphas[i] * (0.6f + glow)), 255, 200, 90));
-            rect.set(cx - rx, cy - ry, cx + rx, cy + ry);
-            c.drawOval(rect, p);
+            path.reset();
+            path.moveTo(cx - topHalf[i] * u, 0);
+            path.lineTo(cx + topHalf[i] * u, 0);
+            path.lineTo(cx + botHalf[i] * u, floorY);
+            path.lineTo(cx - botHalf[i] * u, floorY);
+            path.close();
+
+            p.setAlpha((int) (alpha[i] * flicker));
+            c.drawPath(path, p);
         }
-        p.setStyle(Paint.Style.FILL);
 
-        // Sisi panggung (tebal).
-        p.setColor(0xFF1B2257);
-        rect.set(cx - rx, cy - ry + thick, cx + rx, cy + ry + thick);
-        c.drawOval(rect, p);
-        rect.set(cx - rx, cy, cx + rx, cy + thick);
-        c.drawRect(rect, p);
+        // Lampu di atas.
+        p.setShader(lampShader);
+        p.setAlpha(255);
+        c.drawCircle(cx, 0, 2.4f * u, p);
 
-        // Permukaan atas.
-        p.setShader(pedestalShader);
-        rect.set(cx - rx, cy - ry, cx + rx, cy + ry);
-        c.drawOval(rect, p);
+        // Kolam cahaya di lantai.
+        c.save();
+        c.scale(1f, 0.24f, cx, floorY);
+        p.setShader(poolShader);
+        p.setAlpha((int) (255 * flicker));
+        c.drawCircle(cx, floorY, 3.7f * u, p);
+        c.restore();
+
         p.setShader(null);
-
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(0.07f * u);
-        p.setColor(Color.argb(230, 255, 214, 90));
-        c.drawOval(rect, p);
-
-        p.setStrokeWidth(0.04f * u);
-        p.setColor(Color.argb(110, 255, 255, 255));
-        rect.set(cx - rx * 0.72f, cy - ry * 0.72f, cx + rx * 0.72f, cy + ry * 0.72f);
-        c.drawOval(rect, p);
-        p.setStyle(Paint.Style.FILL);
+        p.setAlpha(255);
     }
 
-    // Percikan cahaya yang berputar mengelilingi panggung.
-    private void drawOrbit(Canvas c, float t, boolean back) {
+    // Gambar karakter sebelumnya (kiri) dan berikutnya (kanan) dengan opacity rendah,
+    // di samping tombol panah.
+    private void drawSideGhosts(Canvas c, float t, int sel) {
         float cx = sw / 2f;
-        float cy = PEDESTAL_Y * u;
+        float feetY = PEDESTAL_Y * u;
+        float arrowEdge = (ARROW_X + 0.95f) * u;   // tepi luar lingkaran panah
 
-        for (int i = 0; i < 8; i++) {
-            float a = t * 0.9f + i * (float) Math.PI / 4f;
-            float s = (float) Math.sin(a);
+        for (int side = -1; side <= 1; side += 2) {
+            int idx = (sel + COUNT + side) % COUNT;
 
-            if ((s < 0) != back) {
+            // Posisi dihitung dari tepi panah, jadi jaraknya sama untuk semua karakter.
+            float halfW = assets.getCharacterPreviewWidth(idx) * SIDE_SCALE / 2f;
+            float x = cx + side * (arrowEdge + SIDE_GAP * u + halfW);
+
+            // Lewati kalau keluar layar.
+            if (x - halfW < 0 || x + halfW > sw) {
                 continue;
             }
 
-            float x = cx + 3.0f * u * (float) Math.cos(a);
-            float y = cy + 0.52f * u * s;
-            float size = u * (0.06f + 0.04f * (0.5f + 0.5f * (float) Math.sin(t * 4f + i)));
-
-            p.setColor(Color.argb(70, 255, 214, 90));
-            c.drawCircle(x, y, size * 2.4f, p);
-            p.setColor(Color.argb(240, 255, 244, 190));
-            c.drawCircle(x, y, size, p);
+            float bob = (float) Math.sin(t * 1.8f + (side > 0 ? 1.2f : 0f)) * 0.07f * u;
+            assets.drawCharacterGhost(c, idx, x, feetY - bob, SIDE_SCALE, GHOST_ALPHA);
         }
     }
 
@@ -370,31 +319,64 @@ public class CharacterSelectScreen {
         c.restore();
     }
 
+    // Papan kayu: bayangan, serat, tepi cokelat tua, dan paku di kiri-kanan.
+    private void drawWoodSign(Canvas c, float left, float top, float right, float bottom) {
+        float rad = 0.2f * u;
+
+        rect.set(left, top + 0.1f * u, right, bottom + 0.1f * u);
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0x55000000);
+        c.drawRoundRect(rect, rad, rad, p);
+
+        rect.set(left, top, right, bottom);
+        p.setColor(0xFF9A6234);
+        c.drawRoundRect(rect, rad, rad, p);
+
+        c.save();
+        path.reset();
+        path.addRoundRect(rect, rad, rad, Path.Direction.CW);
+        c.clipPath(path);
+        float h = bottom - top;
+        p.setColor(0x26000000);
+        c.drawRect(left, top + h * 0.34f, right, top + h * 0.34f + 0.04f * u, p);
+        c.drawRect(left, top + h * 0.68f, right, top + h * 0.68f + 0.04f * u, p);
+        p.setColor(0x33FFFFFF);
+        c.drawRect(left, top, right, top + 0.09f * u, p);
+        c.restore();
+
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(0.07f * u);
+        p.setColor(0xFF4A2A0C);
+        c.drawRoundRect(rect, rad, rad, p);
+        p.setStyle(Paint.Style.FILL);
+
+        p.setColor(0xFFE6C27A);
+        c.drawCircle(left + 0.28f * u, (top + bottom) / 2f, 0.07f * u, p);
+        c.drawCircle(right - 0.28f * u, (top + bottom) / 2f, 0.07f * u, p);
+    }
+
     private void drawNameAndDots(Canvas c, int sel) {
         float cx = sw / 2f;
 
-        // Label nama.
+        // Label nama: papan kayu.
         float pillW = 4.4f * u;
         float pillH = 0.78f * u;
         float pillTop = 8.5f * u;
 
-        rect.set(cx - pillW / 2f, pillTop, cx + pillW / 2f, pillTop + pillH);
-        p.setColor(Color.argb(215, 16, 22, 56));
-        c.drawRoundRect(rect, pillH / 2f, pillH / 2f, p);
-
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(0.05f * u);
-        p.setColor(Color.rgb(255, 214, 90));
-        c.drawRoundRect(rect, pillH / 2f, pillH / 2f, p);
-        p.setStyle(Paint.Style.FILL);
+        drawWoodSign(c, cx - pillW / 2f, pillTop, cx + pillW / 2f, pillTop + pillH);
 
         p.setTypeface(titleFace);
         p.setTextAlign(Paint.Align.CENTER);
         p.setTextSize(0.46f * u);
         p.setLetterSpacing(0.18f);
-        p.setColor(Color.WHITE);
-        c.drawText(Assets.CHAR_NAMES[sel].toUpperCase(),
-                cx, pillTop + pillH / 2f + 0.16f * u, p);
+
+        String name = Assets.CHAR_NAMES[sel].toUpperCase();
+        float ty = pillTop + pillH / 2f + 0.16f * u;
+
+        p.setColor(0x88000000);
+        c.drawText(name, cx + 0.03f * u, ty + 0.04f * u, p);
+        p.setColor(0xFFFFF1C2);
+        c.drawText(name, cx, ty, p);
         p.setLetterSpacing(0f);
 
         // Titik penanda karakter ke berapa.
@@ -428,10 +410,10 @@ public class CharacterSelectScreen {
 
         // Cahaya bulat di belakang.
         p.setColor(Color.argb((int) (38 + 90 * flash), 255, 214, 100));
-        c.drawCircle(cx, cy, 0.9f * u * scale, p);
+        c.drawCircle(cx, cy, 0.75f * u * scale, p);
 
-        float w = 0.5f * u;
-        float h = 0.62f * u;
+        float w = 0.4f * u;
+        float h = 0.5f * u;
 
         path.reset();
         if (left) {

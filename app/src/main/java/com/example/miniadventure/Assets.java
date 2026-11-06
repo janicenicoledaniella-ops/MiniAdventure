@@ -1,5 +1,5 @@
-        // ground.png punya area transparan di atasnya, jadi kita pakai gambar
-        // yang sudah dipotong dari bagian bawah agar menempel ke tanah.
+// ground.png punya area transparan di atasnya, jadi kita pakai gambar
+// yang sudah dipotong dari bagian bawah agar menempel ke tanah.
 package com.example.miniadventure;
 
 import android.content.Context;
@@ -39,15 +39,17 @@ public class Assets {
     private Bitmap groundBmp;
     private Bitmap playerBmp;
 
-    // Karakter yang bisa dipilih: 0 = girl 1, 1 = boy 1.
+    // Karakter yang bisa dipilih: 0 = girl 1, 1 = boy 1, 2 = girl 2, 3 = boy 2.
     private static final int[] CHAR_RES = {
             R.drawable.chara_girl1,
-            R.drawable.chara_boy1
+            R.drawable.chara_boy1,
+            R.drawable.chara_girl2,
+            R.drawable.chara_boy2
     };
-    public static final String[] CHAR_NAMES = {"Girl", "Boy"};
+    public static final String[] CHAR_NAMES = {"Girl 1", "Boy 1", "Girl 2", "Boy 2"};
 
-    private final Bitmap[] charGameBmp = new Bitmap[2];     // ukuran di dalam game
-    private final Bitmap[] charPreviewBmp = new Bitmap[2];  // ukuran di layar pilih karakter
+    private final Bitmap[] charGameBmp = new Bitmap[CHAR_RES.length];     // ukuran di dalam game
+    private final Bitmap[] charPreviewBmp = new Bitmap[CHAR_RES.length];  // ukuran di layar pilih karakter
     private boolean facingLeft = false;
 
     public Assets(Context context) {
@@ -156,6 +158,31 @@ public class Assets {
 
     }
 
+    // Memotong bitmap sampai batas piksel yang terlihat (alpha > 20).
+    private Bitmap trimTransparent(Bitmap src) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        int[] px = new int[w * h];
+        src.getPixels(px, 0, w, 0, 0, w, h);
+
+        int minX = w, minY = h, maxX = -1, maxY = -1;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if ((px[y * w + x] >>> 24) > 20) {
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+        }
+
+        if (maxX < minX || maxY < minY) return src;
+        if (minX == 0 && minY == 0 && maxX == w - 1 && maxY == h - 1) return src;
+
+        return Bitmap.createBitmap(src, minX, minY, maxX - minX + 1, maxY - minY + 1);
+    }
+
     // Sprite diperkecil supaya hemat memori.
     private void loadCharacters(float u) {
         BitmapFactory.Options opts = new BitmapFactory.Options();
@@ -165,6 +192,14 @@ public class Assets {
             Bitmap raw = BitmapFactory.decodeResource(
                     context.getResources(), CHAR_RES[i], opts);
             if (raw == null) continue;
+
+            // Buang ruang transparan di sekeliling karakter supaya semua karakter
+            // sama tinggi dan kakinya pas di lantai.
+            Bitmap trimmed = trimTransparent(raw);
+            if (trimmed != raw) {
+                raw.recycle();
+                raw = trimmed;
+            }
 
             float ratio = (float) raw.getWidth() / raw.getHeight();
 
@@ -184,6 +219,30 @@ public class Assets {
         if (index < 0 || index >= charGameBmp.length) return;
         playerBmp = charGameBmp[index];
         facingLeft = false;
+    }
+
+    private final Paint ghostPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+
+    // Menggambar gambar karakter dengan opacity rendah (dipakai layar pilih karakter).
+    // feetY = posisi kaki, scale = skala dari ukuran preview, alpha = 0..255.
+    public void drawCharacterGhost(Canvas c, int index, float cx, float feetY,
+                                   float scale, int alpha) {
+        if (index < 0 || index >= charPreviewBmp.length) return;
+        Bitmap b = charPreviewBmp[index];
+        if (b == null) return;
+
+        float w = b.getWidth() * scale;
+        float h = b.getHeight() * scale;
+
+        ghostPaint.setAlpha(alpha);
+        c.drawBitmap(b, null, new RectF(cx - w / 2f, feetY - h, cx + w / 2f, feetY), ghostPaint);
+    }
+
+    // Lebar gambar karakter di layar pilih karakter (dalam piksel, skala 1).
+    public float getCharacterPreviewWidth(int index) {
+        if (index < 0 || index >= charPreviewBmp.length) return 0f;
+        Bitmap b = charPreviewBmp[index];
+        return b == null ? 0f : b.getWidth();
     }
 
     public void drawCharacterPreview(Canvas c, int index, float cx, float top) {
