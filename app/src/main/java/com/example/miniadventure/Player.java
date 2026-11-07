@@ -48,6 +48,8 @@ public class Player {
         jumpRequested = true;
     }
 
+
+
     public void update(
             float dt,
             float unit,
@@ -72,59 +74,80 @@ public class Player {
 
         jumpRequested = false;
 
-        x += vx * dt;
+        float previousY = y;
+        float previousBottom = y + h;
 
-        if (x < 0) {
-            x = 0;
-        }
-
-        RectF horizontalRect = getRect();
+        // Tabrakan horizontal.
+        float targetX = x + vx * dt;
 
         for (RectF platform : platforms) {
-            if (y + h <= platform.top + 0.1f * unit) {
+            boolean verticalOverlap =
+                    previousY + h > platform.top &&
+                            previousY < platform.bottom;
+
+            if (!verticalOverlap) {
                 continue;
+            }
+
+            // Menghalangi pemain dari sisi kiri.
+            if (vx > 0 &&
+                    x + w <= platform.left &&
+                    targetX + w > platform.left) {
+
+                targetX = platform.left - w;
+            }
+
+            // Menghalangi pemain dari sisi kanan.
+            else if (vx < 0 &&
+                    x >= platform.right &&
+                    targetX < platform.right) {
+
+                targetX = platform.right;
             }
         }
 
-        float oldTop = y;
-        float oldBottom = y + h;
+        x = Math.max(0, targetX);
 
+        // Gravitasi dan gerakan vertikal.
         vy += GRAVITY * unit * dt;
         y += vy * dt;
 
-        onGround = false;
+        float currentTop = y;
+        float currentBottom = y + h;
 
-        RectF verticalRect = getRect();
+        onGround = false;
 
         for (RectF platform : platforms) {
             boolean horizontalOverlap =
-                    verticalRect.right > platform.left &&
-                            verticalRect.left < platform.right;
+                    x + w > platform.left &&
+                            x < platform.right;
 
             if (!horizontalOverlap) {
                 continue;
             }
 
+            // Mendarat di atas platform.
             if (vy >= 0 &&
-                    oldBottom <= platform.top + 0.05f * unit &&
-                    verticalRect.bottom >= platform.top) {
+                    previousBottom <= platform.top &&
+                    currentBottom >= platform.top) {
 
                 y = platform.top - h;
                 vy = 0;
                 onGround = true;
-                break;
             }
 
-            if (vy < 0 &&
-                    oldTop >= platform.bottom &&
-                    verticalRect.top <= platform.bottom) {
+            // Kepala menyentuh bagian bawah platform.
+            else if (vy < 0 &&
+                    previousY >= platform.bottom &&
+                    currentTop <= platform.bottom) {
 
                 y = platform.bottom;
                 vy = 0;
-                break;
             }
         }
     }
+
+
 
     public RectF getRect() {
         return new RectF(

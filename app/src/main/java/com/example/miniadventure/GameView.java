@@ -6,6 +6,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.graphics.Typeface;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -345,26 +346,31 @@ public class GameView extends SurfaceView implements Runnable {
             }
 
             // Bendera.
+            // Bendera.
             if (assets.flagBmp != null) {
-                float flagWidth = 2.0f * u;
                 float flagHeight = 2.5f * u;
 
-                float flagLeft = world.goal.centerX() - flagWidth / 2f;
+                float ratio = (float) assets.flagBmp.getWidth()
+                        / assets.flagBmp.getHeight();
+
+                float flagWidth = flagHeight * ratio;
+
                 float flagBottom = world.goal.bottom;
 
-                RectF flagRect = new RectF(
+                if (Math.abs(world.goal.bottom - 9f * u) < 0.1f) {
+                    flagBottom += 0.55f * u;
+                }
+
+                float flagLeft = world.goal.centerX() - flagWidth / 2f;
+
+                RectF flagDst = new RectF(
                         flagLeft,
                         flagBottom - flagHeight,
                         flagLeft + flagWidth,
                         flagBottom
                 );
 
-                c.drawBitmap(
-                        assets.flagBmp,
-                        null,
-                        flagRect,
-                        paint
-                );
+                c.drawBitmap(assets.flagBmp, null, flagDst, paint);
             }
 
             // Pemain.
@@ -384,29 +390,32 @@ public class GameView extends SurfaceView implements Runnable {
     }
 
     private void drawHud(Canvas c) {
-        paint.setColor(Color.BLACK);
-        paint.setTextSize(u * 0.55f);
-        paint.setTextAlign(Paint.Align.LEFT);
+        float y = u * 0.15f;
 
-        float iconSize = u * 1.0f;
-        float hudY = u * 0.85f;
-
+        // Ikon koin.
         RectF coinIcon = new RectF(
-                u * 0.5f,
-                u * 0.15f,
-                u * 1.5f,
-                u * 1.15f
+                u * 0.35f,
+                y,
+                u * 1.25f,
+                y + u * 0.85f
         );
 
         assets.drawCoinIcon(c, coinIcon);
 
+        // Jumlah koin.
+        paint.setColor(Color.WHITE);
+        paint.setTextSize(u * 0.48f);
+        paint.setTextAlign(Paint.Align.LEFT);
+        paint.setTypeface(Typeface.DEFAULT_BOLD);
+
         c.drawText(
                 String.valueOf(world.getScore()),
-                u * 1.65f,
-                hudY,
+                u * 1.35f,
+                y + u * 0.65f,
                 paint
         );
 
+        // Ikon hati.
         Bitmap heart;
 
         if (lives >= 3) {
@@ -418,154 +427,94 @@ public class GameView extends SurfaceView implements Runnable {
         }
 
         if (heart != null) {
-            float heartWidth = u * 2.4f;
-            float heartHeight = u * 0.8f;
-
             RectF heartRect = new RectF(
                     u * 2.8f,
-                    u * 0.15f,
-                    u * 2.8f + heartWidth,
-                    u * 0.15f + heartHeight
+                    y,
+                    u * 5.2f,
+                    y + u * 0.85f
             );
 
-            c.drawBitmap(
-                    heart,
-                    null,
-                    heartRect,
-                    paint
-            );
+            c.drawBitmap(heart, null, heartRect, paint);
         }
 
+        // Badge level di sebelah kanan hati.
         drawLevelBadge(c);
     }
 
     private void drawLevelBadge(Canvas c) {
-        float badgeWidth = 3.2f * u;
-        float badgeHeight = 0.95f * u;
-
-        float left = 5.5f * u;
-        float top = 0.15f * u;
+        float x = u * 5.45f;
+        float y = u * 0.15f;
+        float w = u * 2.4f;
+        float h = u * 0.85f;
 
         RectF badge = new RectF(
-                left,
-                top,
-                left + badgeWidth,
-                top + badgeHeight
-        );
-
-        int badgeColor;
-        int borderColor;
-
-        if (round <= 5) {
-            // Bronze
-            badgeColor = Color.rgb(166, 95, 45);
-            borderColor = Color.rgb(105, 55, 25);
-
-        } else if (round <= 10) {
-            // Silver
-            badgeColor = Color.rgb(150, 160, 175);
-            borderColor = Color.rgb(85, 95, 110);
-
-        } else if (round <= 20) {
-            // Gold
-            badgeColor = Color.rgb(220, 165, 35);
-            borderColor = Color.rgb(145, 100, 15);
-
-        } else {
-            // Diamond
-            badgeColor = Color.rgb(45, 165, 195);
-            borderColor = Color.rgb(15, 95, 130);
-        }
-
-        // Border badge.
-        paint.setStyle(Paint.Style.FILL);
-        paint.setColor(borderColor);
-
-        c.drawRoundRect(
-                badge,
-                0.2f * u,
-                0.2f * u,
-                paint
+                x,
+                y,
+                x + w,
+                y + h
         );
 
         // Background badge.
-        RectF inner = new RectF(
-                badge.left + 0.05f * u,
-                badge.top + 0.05f * u,
-                badge.right - 0.05f * u,
-                badge.bottom - 0.05f * u
-        );
-
-        paint.setColor(badgeColor);
+        // Background warna kayu.
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.rgb(139, 90, 43));
 
         c.drawRoundRect(
-                inner,
-                0.18f * u,
-                0.18f * u,
+                badge,
+                u * 0.18f,
+                u * 0.18f,
                 paint
         );
 
-        // Emblem diamond.
-        float centerX = left + 0.48f * u;
-        float centerY = top + badgeHeight / 2f;
-        float diamondSize = 0.22f * u;
+        // Border cokelat tua.
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(u * 0.045f);
+        paint.setColor(Color.rgb(85, 50, 25));
 
-        paint.setColor(Color.WHITE);
-
-        c.save();
-        c.rotate(45, centerX, centerY);
-
-        c.drawRect(
-                centerX - diamondSize,
-                centerY - diamondSize,
-                centerX + diamondSize,
-                centerY + diamondSize,
+        c.drawRoundRect(
+                badge,
+                u * 0.18f,
+                u * 0.18f,
                 paint
         );
 
-        c.restore();
+        paint.setStyle(Paint.Style.FILL);
 
-        // Label LV.
-        paint.setColor(Color.WHITE);
-        paint.setFakeBoldText(true);
-        paint.setTextAlign(Paint.Align.LEFT);
+        // Gambar medali berukuran kecil.
+        Bitmap badgeBitmap = assets.getLevelBadge(round);
 
-        float textSize = 0.38f * u;
-        paint.setTextSize(textSize);
+        if (badgeBitmap != null) {
+            float iconSize = u * 0.65f;
 
-        float baseline = top + 0.61f * u;
+            RectF iconRect = new RectF(
+                    x + u * 0.10f,
+                    y + (h - iconSize) / 2f,
+                    x + u * 0.10f + iconSize,
+                    y + (h + iconSize) / 2f
+            );
 
-        c.drawText(
-                "LV.",
-                left + 0.85f * u,
-                baseline,
-                paint
-        );
-
-        // Angka level yang terus bertambah.
-        String levelText = String.valueOf(round);
-
-        float numberSize = 0.48f * u;
-        paint.setTextSize(numberSize);
-
-        float maxTextWidth = 1.45f * u;
-
-        while (paint.measureText(levelText) > maxTextWidth
-                && numberSize > 0.22f * u) {
-
-            numberSize -= 0.02f * u;
-            paint.setTextSize(numberSize);
+            c.drawBitmap(
+                    badgeBitmap,
+                    null,
+                    iconRect,
+                    paint
+            );
         }
 
+        // Tulisan level.
+        paint.setColor(Color.WHITE);
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTextSize(u * 0.30f);
+        paint.setTypeface(Typeface.DEFAULT_BOLD);
+
         c.drawText(
-                levelText,
-                left + 1.55f * u,
-                baseline,
+                "LEVEL " + round,
+                x + u * 1.55f,
+                badge.centerY() + u * 0.11f,
                 paint
         );
 
-        paint.setFakeBoldText(false);
-        paint.setStyle(Paint.Style.FILL);
+        paint.setTextAlign(Paint.Align.LEFT);
     }
 
     private RectF getLeftButtonRect() {
@@ -821,77 +770,29 @@ public class GameView extends SurfaceView implements Runnable {
         paint.setStyle(Paint.Style.FILL);
     }
 
-    private void drawGameOverLevelBadge(
-            Canvas c,
-            float centerX,
-            float top
-    ) {
-        float width = 3.5f * u;
-        float height = 1.05f * u;
+    private void drawGameOverLevelBadge(Canvas c, float centerX, float centerY) {
+        float w = u * 3.0f;
+        float h = u * 0.85f;
 
         RectF badge = new RectF(
-                centerX - width / 2f,
-                top,
-                centerX + width / 2f,
-                top + height
+                centerX - w / 2f,
+                centerY - h / 2f,
+                centerX + w / 2f,
+                centerY + h / 2f
         );
 
-        int background;
-        int border;
+        Bitmap badgeBitmap = assets.getLevelBadge(round);
 
-        if (round <= 5) {
-            background = Color.rgb(166, 95, 45);
-            border = Color.rgb(105, 55, 25);
-        } else if (round <= 10) {
-            background = Color.rgb(150, 160, 175);
-            border = Color.rgb(85, 95, 110);
-        } else if (round <= 20) {
-            background = Color.rgb(220, 165, 35);
-            border = Color.rgb(145, 100, 15);
-        } else {
-            background = Color.rgb(45, 165, 195);
-            border = Color.rgb(15, 95, 130);
+        if (badgeBitmap != null) {
+            c.drawBitmap(badgeBitmap, null, badge, paint);
         }
-
-        paint.setStyle(Paint.Style.FILL);
-        paint.setColor(border);
-
-        c.drawRoundRect(
-                badge,
-                0.2f * u,
-                0.2f * u,
-                paint
-        );
-
-        RectF inner = new RectF(
-                badge.left + 0.05f * u,
-                badge.top + 0.05f * u,
-                badge.right - 0.05f * u,
-                badge.bottom - 0.05f * u
-        );
-
-        paint.setColor(background);
-
-        c.drawRoundRect(
-                inner,
-                0.17f * u,
-                0.17f * u,
-                paint
-        );
 
         paint.setColor(Color.WHITE);
         paint.setTextAlign(Paint.Align.CENTER);
-        paint.setTextSize(0.48f * u);
-        paint.setFakeBoldText(true);
+        paint.setTextSize(u * 0.38f);
+        paint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
 
-        c.drawText(
-                "LEVEL " + round,
-                centerX,
-                top + 0.68f * u,
-                paint
-        );
-
-        paint.setFakeBoldText(false);
+        c.drawText("LEVEL " + round, centerX, centerY + u * 0.13f, paint);
     }
 
     @Override

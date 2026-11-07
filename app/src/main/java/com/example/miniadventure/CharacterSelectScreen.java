@@ -82,11 +82,27 @@ public class CharacterSelectScreen {
         cornerEffect = new CornerPathEffect(0.14f * u);
 
         // Lampu sorot dan cahaya di belakang karakter.
+
         bgShader = new RadialGradient(
-                cx, sh * 0.5f, Math.max(sw * 0.58f, sh * 1.0f),
-                new int[]{NAVY_CENTER, NAVY, NAVY_EDGE},
-                new float[]{0f, 0.5f, 1f},
-                Shader.TileMode.CLAMP);
+                cx, sh * 0.5f,
+                Math.max(sw * 0.58f, sh * 1.0f),
+                new int[]{
+                        NAVY_CENTER,
+                        NAVY_CENTER,
+                        NAVY,
+                        NAVY,
+                        NAVY_EDGE
+                },
+                new float[]{
+                        0f,
+                        0.25f,
+                        0.50f,
+                        0.78f,
+                        1f
+                },
+                Shader.TileMode.CLAMP
+        );
+
 
         // Kerucut lampu sorot: terang di atas, memudar ke bawah.
         beamShader = new LinearGradient(
@@ -226,46 +242,54 @@ public class CharacterSelectScreen {
     }
 
     // Lampu sorot dari atas: kerucut cahaya berlapis, lampu di atas, dan kolam cahaya di lantai.
+
     private void drawSpotlight(Canvas c, float t) {
         float cx = sw / 2f;
         float floorY = PEDESTAL_Y * u;
-        float flicker = 0.92f + 0.08f * (float) Math.sin(t * 2.3f);
 
-        // Cahaya hangat di belakang karakter.
+        float flicker = 0.96f + 0.04f * (float) Math.sin(t * 1.5f);
+
+        // Cahaya utama di belakang karakter, menyebar sangat halus.
         p.setStyle(Paint.Style.FILL);
         p.setShader(spotShader);
-        p.setAlpha((int) (255 * flicker));
+        p.setAlpha((int) (180 * flicker));
         c.drawCircle(cx, ARROW_Y * u, 4.6f * u, p);
 
-        // Kerucut cahaya: 3 lapis, makin lebar makin redup, supaya tepinya lembut.
-        float[] topHalf = {1.7f, 1.35f, 1.0f};
-        float[] botHalf = {4.7f, 4.0f, 3.3f};
-        int[] alpha = {70, 110, 150};
+        // Satu kerucut cahaya dengan tepi transparan.
+        p.setShader(new RadialGradient(
+                cx, 0,
+                8.5f * u,
+                new int[]{
+                        0x20FFF4D0,
+                        0x12FFF4D0,
+                        0x00FFF4D0
+                },
+                new float[]{0f, 0.55f, 1f},
+                Shader.TileMode.CLAMP
+        ));
 
-        p.setShader(beamShader);
-        for (int i = 0; i < 3; i++) {
-            path.reset();
-            path.moveTo(cx - topHalf[i] * u, 0);
-            path.lineTo(cx + topHalf[i] * u, 0);
-            path.lineTo(cx + botHalf[i] * u, floorY);
-            path.lineTo(cx - botHalf[i] * u, floorY);
-            path.close();
+        path.reset();
+        path.moveTo(cx - 1.5f * u, 0);
+        path.lineTo(cx + 1.5f * u, 0);
+        path.lineTo(cx + 5.0f * u, floorY);
+        path.lineTo(cx - 5.0f * u, floorY);
+        path.close();
 
-            p.setAlpha((int) (alpha[i] * flicker));
-            c.drawPath(path, p);
-        }
+        c.drawPath(path, p);
 
-        // Lampu di atas.
+        // Lampu bagian atas dibuat lebih lembut.
         p.setShader(lampShader);
-        p.setAlpha(255);
+        p.setAlpha(180);
         c.drawCircle(cx, 0, 2.4f * u, p);
 
-        // Kolam cahaya di lantai.
+        // Cahaya lantai dengan transisi transparan.
         c.save();
         c.scale(1f, 0.24f, cx, floorY);
+
         p.setShader(poolShader);
-        p.setAlpha((int) (255 * flicker));
+        p.setAlpha((int) (180 * flicker));
         c.drawCircle(cx, floorY, 3.7f * u, p);
+
         c.restore();
 
         p.setShader(null);

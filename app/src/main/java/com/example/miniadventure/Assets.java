@@ -33,7 +33,10 @@ public class Assets {
     public Bitmap heart2Bmp;
     public Bitmap heart3Bmp;
 
-
+    private Bitmap bronzeBmp;
+    private Bitmap silverBmp;
+    private Bitmap goldBmp;
+    private Bitmap diamondBmp;
     private Bitmap brickBmp;
     private Bitmap coinBmp;
     private Bitmap groundBmp;
@@ -97,7 +100,21 @@ public class Assets {
                 context.getResources(),
                 R.drawable.heart3
         );
+        bronzeBmp = BitmapFactory.decodeResource(
+                context.getResources(), R.drawable.bronze
+        );
 
+        silverBmp = BitmapFactory.decodeResource(
+                context.getResources(), R.drawable.silver
+        );
+
+        goldBmp = BitmapFactory.decodeResource(
+                context.getResources(), R.drawable.gold
+        );
+
+        diamondBmp = BitmapFactory.decodeResource(
+                context.getResources(), R.drawable.diamond
+        );
         leftArrowBmp = BitmapFactory.decodeResource(
                 context.getResources(), R.drawable.left_arrow
         );
@@ -123,14 +140,13 @@ public class Assets {
         );
 
         if (rawFlag != null) {
-            flagBmp = Bitmap.createBitmap(
-                    rawFlag,
-                    62,
-                    44,
-                    157,
-                    193
-            );
+            flagBmp = trimTransparent(rawFlag);
+
+            if (flagBmp != rawFlag) {
+                rawFlag.recycle();
+            }
         }
+
 
         coinBmp = decodeScaled(
                 R.drawable.coin,
@@ -162,6 +178,18 @@ public class Assets {
             }
         }
 
+    }
+
+    public Bitmap getLevelBadge(int round) {
+        if (round <= 5) {
+            return bronzeBmp;
+        } else if (round <= 10) {
+            return silverBmp;
+        } else if (round <= 20) {
+            return goldBmp;
+        } else {
+            return diamondBmp;
+        }
     }
 
     // Memotong bitmap sampai batas piksel yang terlihat (alpha > 20).
@@ -277,6 +305,7 @@ public class Assets {
         return Bitmap.createScaledBitmap(bitmap, targetW, targetH, true);
     }
 
+
     public void drawBackground(Canvas c, int sw, int sh, float camX) {
         Bitmap bg = backgrounds[currentBgIndex];
 
@@ -297,11 +326,19 @@ public class Assets {
                 c.drawBitmap(bg, null, dst, paint);
             }
 
+            // Efek pencahayaan malam hanya untuk background.
+            if (currentBgIndex == 2) {
+                paint.setColor(Color.argb(85, 8, 18, 55));
+                c.drawRect(0, 0, sw, sh, paint);
+                paint.setColor(Color.WHITE);
+            }
+
             return;
         }
 
         c.drawColor(Color.rgb(135, 206, 235));
     }
+
 
 
     public void drawPlatform(Canvas c, RectF r, float u) {
@@ -327,8 +364,14 @@ public class Assets {
                             r.bottom
                     );
 
-                    paint.setColor(Color.WHITE);
+                    if (currentBgIndex == 2) {
+                        paint.setColor(Color.rgb(105, 115, 145));
+                    } else {
+                        paint.setColor(Color.WHITE);
+                    }
+
                     c.drawBitmap(groundBmp, src, dst, paint);
+                    paint.setColor(Color.WHITE);
                 }
 
                 return;
