@@ -59,6 +59,40 @@ public class Assets {
     private final Bitmap[] charGameBmp = new Bitmap[CHAR_RES.length];     // ukuran di dalam game
     private final Bitmap[] charPreviewBmp = new Bitmap[CHAR_RES.length];  // ukuran di layar pilih karakter
     private boolean facingLeft = false;
+
+    // ---- Animasi sprite (saat ini hanya Ryka / karakter 0) ----
+    private static final int[] ANIM_STAND = {R.drawable.ryka_stand};
+    private static final int[] ANIM_RUN = {
+            R.drawable.ryka_run1, R.drawable.ryka_run2,
+            R.drawable.ryka_run3, R.drawable.ryka_run4
+    };
+    // Urutan: naik cepat -> naik pelan -> puncak -> turun pelan -> turun cepat.
+    private static final int[] ANIM_JUMP = {
+            R.drawable.ryka_jump1, R.drawable.ryka_jump2, R.drawable.ryka_jump3,
+            R.drawable.ryka_jump4, R.drawable.ryka_jump5
+    };
+
+    private static final float ANIM_STAND_PX = 296f;   // tinggi badan sprite saat berdiri (px)
+    private static final float ANIM_SCALE = 2.4f;   // sebelumnya 1.7f
+    private static final int ANIM_CHAR = 0;            // index karakter yang punya animasi
+    private static final float RUN_STEP_UNITS = 0.6f;  // jarak lari per frame (makin besar = makin lambat)
+    private static final float RUN_BLEND = 0.4f;       // porsi akhir tiap frame lari yang di-crossfade
+    private static final long LAND_MS = 0;          // lama efek jongkok saat mendarat
+    private static final float FOOT_SINK_UNITS = 0.02f; // koreksi kecil: ruang kosong di bawah kaki pada sprite
+    private static final float GROUND_TOP_UNITS = 9f;   // tinggi permukaan tanah di World (9 * unit)
+    private static final float GRASS_SINK_UNITS = 0.28f;// kaki turun ke rumput saat berdiri di tanah
+
+    private Bitmap[] animStand, animRun, animJump;
+    private int currentChar = 0;
+    private float unitPx = 1f;
+
+    private final Paint blendPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private Bitmap frameA, frameB;     // frameB digambar di atas frameA dengan alpha
+    private int frameBAlpha;
+    private boolean wasOnGround = true;
+    private long landStartMs = -1000;
+    private float sinkCur = 0f;        // turun-naik kaki yang dihaluskan
+    private long lastDrawMs = 0;
     private int previewBaseH = 0;  // tinggi preview standar (pengali 1.0), dipakai untuk menyejajarkan kaki
 
     public Assets(Context context) {
@@ -217,8 +251,87 @@ public class Assets {
         return Bitmap.createBitmap(src, minX, minY, maxX - minX + 1, maxY - minY + 1);
     }
 
-    // Sprite diperkecil supaya hemat memori.
+    // Memotong sampai area terlihat, lalu menghitung titik tengah massa horizontal
+    // (outCx[0], relatif ke tepi kiri hasil potongan). Garis kecepatan tipis tidak
+    // menggeser posisi karakter karena massanya kecil.
+    private Bitmap trimWithCentroid(Bitmap src, float[] outCx) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        int[] px = new int[w * h];
+        src.getPixels(px, 0, w, 0, 0, w, h);
+
+        int minX = w, minY = h, maxX = -1, maxY = -1;
+        double sum = 0, sumX = 0;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int a = px[y * w + x] >>> 24;
+                if (a > 20) {
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                    sum += a;
+                    sumX += (double) a * x;
+                }
+            }
+        }
+
+        if (maxX < minX || maxY < minY) {
+            outCx[0] = w / 2f;
+            return src;
+        }
+
+        outCx[0] = (float) (sumX / sum) - minX + 0.5f;
+        return Bitmap.createBitmap(src, minX, minY, maxX - minX + 1, maxY - minY + 1);
+    }
+
+    // Setiap frame dipotong, disamakan tingginya, lalu diletakkan di kanvas berukuran
+    // sama (tengah di titik massa, kaki di dasar). Ukuran file gambar tidak berpengaruh.
+    private Bitmap[] loadAnim(int[] resIds, int canvasW, int canvasH) {
+        BitmapFactory.Options opts = new BitmapFactory.Options();
+        opts.inScaled = false;
+
+        Bitmap[] out = new Bitmap[resIds.length];
+        for (int i = 0; i < resIds.length; i++) {
+            Bitmap raw = BitmapFactory.decodeResource(
+                    context.getResources(), resIds[i], opts);
+            if (raw == null) return null;
+
+            float[] cx = new float[1];
+            Bitmap trimmed = trimWithCentroid(raw, cx);
+
+            float k = (float) canvasH / trimmed.getHeight();
+            Bitmap scaled = Bitmap.createScaledBitmap(
+                    trimmed,
+                    Math.max(1, Math.round(trimmed.getWidth() * k)),
+                    canvasH,
+                    true);
+
+            Bitmap frame = Bitmap.createBitmap(canvasW, canvasH, Bitmap.Config.ARGB_8888);
+            Canvas cv = new Canvas(frame);
+            cv.drawBitmap(scaled, canvasW / 2f - cx[0] * k, 0f, null);
+            out[i] = frame;
+
+            Bitmap[] toFree = {scaled, trimmed, raw};
+            for (Bitmap bmp : toFree) {
+                if (bmp != null && !bmp.isRecycled()) bmp.recycle();
+            }
+        }
+        return out;
+    }
+
+    private void loadAnimations(float u) {
+        unitPx = u;
+        int canvasH = Math.round(u * 1.2f * CHAR_SCALE[ANIM_CHAR] * ANIM_SCALE);
+        int canvasW = Math.round(canvasH * 1.2f);
+        animStand = loadAnim(ANIM_STAND, canvasW, canvasH);
+        animRun = loadAnim(ANIM_RUN, canvasW, canvasH);
+        animJump = loadAnim(ANIM_JUMP, canvasW, canvasH);
+    }
+
     private void loadCharacters(float u) {
+        loadAnimations(u);          // <-- baris baru ini
+
         BitmapFactory.Options opts = new BitmapFactory.Options();
         opts.inScaled = false;
 
@@ -253,9 +366,9 @@ public class Assets {
     public void setPlayerCharacter(int index) {
         if (index < 0 || index >= charGameBmp.length) return;
         playerBmp = charGameBmp[index];
+        currentChar = index;        // <-- baris baru ini
         facingLeft = false;
     }
-
     private final Paint ghostPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
 
     // Menggambar gambar karakter dengan opacity rendah (dipakai layar pilih karakter).
@@ -436,20 +549,111 @@ public class Assets {
             c.drawRect(e.rect, paint);
         }
     }
+    private static float smooth(float t) {
+        t = Math.max(0f, Math.min(1f, t));
+        return t * t * (3f - 2f * t);
+    }
+
+    // Memilih frame (frameA, dan frameB untuk crossfade) sesuai kondisi pemain.
+    private void pickPlayerFrame(Player p) {
+        frameA = null;
+        frameB = null;
+        frameBAlpha = 0;
+
+        if (currentChar != ANIM_CHAR
+                || animStand == null || animRun == null || animJump == null) {
+            frameA = playerBmp;   // karakter lain tetap gambar statis
+            return;
+        }
+
+        long now = android.os.SystemClock.uptimeMillis();
+
+        if (!p.onGround) {
+            wasOnGround = false;
+
+            // v: kecepatan vertikal (unit/detik), negatif = naik.
+            float v = p.vy / unitPx;
+            // Petakan v ke posisi kontinu 0..3 di antara jump1..jump4 (jump5 dipakai saat mendarat).
+            float pos;
+            if (v <= -12f) pos = 0f;
+            else if (v <= -5f) pos = (v + 12f) / 7f;
+            else if (v <= 0f) pos = 1f + (v + 5f) / 5f;
+            else if (v <= 6f) pos = 2f + v / 6f;
+            else pos = 3f;
+
+            int i = Math.min((int) pos, 2);
+            float f = pos - i;
+            frameA = animJump[i];
+            frameB = animJump[i + 1];
+            frameBAlpha = Math.round(smooth(f) * 255f);
+            return;
+        }
+
+        // Baru saja mendarat: mulai hitung efek jongkok.
+        if (!wasOnGround) {
+            wasOnGround = true;
+            landStartMs = now;
+        }
+
+        if (p.vx != 0f) {
+            float ph = p.x / (unitPx * RUN_STEP_UNITS);
+            int i = (int) Math.floor(ph);
+            float f = ph - i;
+            int n = animRun.length;
+            frameA = animRun[Math.floorMod(i, n)];
+
+            float start = 1f - RUN_BLEND;
+            if (f > start) {
+                frameB = animRun[Math.floorMod(i + 1, n)];
+                frameBAlpha = Math.round(smooth((f - start) / RUN_BLEND) * 255f);
+            }
+        } else {
+            frameA = animStand[0];
+        }
+
+        // Efek mendarat: jongkok (jump5) memudar ke pose normal.
+        float land = LAND_MS > 0 ? 1f - (now - landStartMs) / (float) LAND_MS : 0f;
+        if (land > 0f) {
+            frameB = animJump[4];
+            frameBAlpha = Math.round(smooth(land) * 255f);
+        }
+    }
+
     public void drawPlayer(Canvas c, Player p) {
-        if (playerBmp != null) {
+        pickPlayerFrame(p);
+
+        if (frameA != null) {
             if (p.vx < 0) facingLeft = true;
             else if (p.vx > 0) facingLeft = false;
 
-            // Sprite berdiri di atas hitbox: tengah horizontal, kaki sejajar dasar.
-            float left = p.x + p.w / 2f - playerBmp.getWidth() / 2f;
-            float top = p.y + p.h - playerBmp.getHeight();
+            float cx = p.x + p.w / 2f;
+            // Tepi atas rumput pada gambar tanah ada sedikit di bawah garis lantai fisik,
+            // jadi saat berdiri di tanah kaki diturunkan; di platform bata tidak.
+            float feetY = p.y + p.h;
+            float target = 0f;
+            if (p.onGround && Math.abs(feetY - GROUND_TOP_UNITS * unitPx) < 0.05f * unitPx) {
+                target = GRASS_SINK_UNITS * unitPx;
+            }
+            long nowMs = android.os.SystemClock.uptimeMillis();
+            float dt = Math.min(0.1f, Math.max(0f, (nowMs - lastDrawMs) / 1000f));
+            lastDrawMs = nowMs;
+            sinkCur += (target - sinkCur) * (1f - (float) Math.exp(-dt * 25f));
+
+            float bottom = feetY + sinkCur + unitPx * FOOT_SINK_UNITS;
 
             c.save();
             if (facingLeft) {
-                c.scale(-1f, 1f, p.x + p.w / 2f, 0f);
+                c.scale(-1f, 1f, cx, 0f);
             }
-            c.drawBitmap(playerBmp, left, top, paint);
+
+            c.drawBitmap(frameA, cx - frameA.getWidth() / 2f,
+                    bottom - frameA.getHeight(), paint);
+
+            if (frameB != null && frameBAlpha > 0) {
+                blendPaint.setAlpha(frameBAlpha);
+                c.drawBitmap(frameB, cx - frameB.getWidth() / 2f,
+                        bottom - frameB.getHeight(), blendPaint);
+            }
             c.restore();
             return;
         }
