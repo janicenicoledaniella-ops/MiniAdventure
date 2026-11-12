@@ -7,6 +7,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Typeface;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -14,6 +15,9 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 
 public class GameView extends SurfaceView implements Runnable {
+
+    private static final String TAG = "GAMEDBG";
+    private volatile String errorText;
 
     private static final int PLAYING = 0;
     private static final int GAME_OVER = 1;
@@ -39,6 +43,7 @@ public class GameView extends SurfaceView implements Runnable {
     private final SharedPreferences preferences;
 
     private final Assets assets;
+    private final SoundManager sounds;
     private final CharacterSelectScreen menu;
 
     // Menghubungkan input layar dengan game thread.
@@ -66,6 +71,7 @@ public class GameView extends SurfaceView implements Runnable {
 
         holder = getHolder();
         assets = new Assets(context);
+        sounds = new SoundManager(context);
         menu = new CharacterSelectScreen(assets);
 
         gameOverBmp = BitmapFactory.decodeResource(
@@ -107,6 +113,9 @@ public class GameView extends SurfaceView implements Runnable {
         buildRound();
 
         state = PLAYING;
+
+        // Musik latar mulai saat permainan dimulai.
+        sounds.startMusic();
     }
 
     // Putaran baru: skor dan nyawa tidak direset.
@@ -139,11 +148,32 @@ public class GameView extends SurfaceView implements Runnable {
 
     @Override
     public void run() {
+        Log.d(TAG, "run: game thread mulai");
+
+        try {
+            runLoop();
+        } catch (Throwable t) {
+            // Tampilkan error di layar supaya tidak hanya hitam.
+            Log.e(TAG, "Game thread crash", t);
+            errorText = t.toString();
+            showErrorForever();
+        }
+    }
+
+    private void sleepQuiet(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ignored) {
+        }
+    }
+
+    private void runLoop() {
         long last = System.nanoTime();
 
         while (running) {
             if (!holder.getSurface().isValid()) {
                 last = System.nanoTime();
+                sleepQuiet(5);
                 continue;
             }
 
@@ -153,15 +183,24 @@ public class GameView extends SurfaceView implements Runnable {
 
                 if (sw == 0 || sh == 0) {
                     last = System.nanoTime();
+                    sleepQuiet(5);
                     continue;
                 }
 
                 u = sh / 12f;
+
+                // Gambar layar loading dulu supaya layar tidak hitam.
+                drawLoading("Loading...");
+
                 levelBuilt = true;
 
+                Log.d(TAG, "load gambar mulai, sw=" + sw + " sh=" + sh);
                 assets.load(u);
+                Log.d(TAG, "load gambar selesai");
+
                 menu.layout(sw, sh, u);
                 state = SELECT_CHARACTER;
+                Log.d(TAG, "menu siap");
 
                 last = System.nanoTime();
             }
@@ -217,6 +256,61 @@ public class GameView extends SurfaceView implements Runnable {
         }
     }
 
+    private void drawLoading(String text) {
+        Canvas c = holder.lockCanvas();
+
+        if (c == null) {
+            return;
+        }
+
+        try {
+            c.drawColor(Color.rgb(11, 26, 71));
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.WHITE);
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(Math.max(24f, u * 0.6f));
+            c.drawText(text, sw / 2f, sh / 2f, paint);
+        } finally {
+            holder.unlockCanvasAndPost(c);
+        }
+    }
+
+    // Menampilkan pesan error di layar sampai app ditutup.
+    private void showErrorForever() {
+        while (running) {
+            if (holder.getSurface().isValid()) {
+                Canvas c = holder.lockCanvas();
+
+                if (c != null) {
+                    try {
+                        c.drawColor(Color.rgb(90, 0, 0));
+                        paint.setStyle(Paint.Style.FILL);
+                        paint.setColor(Color.WHITE);
+                        paint.setTextAlign(Paint.Align.LEFT);
+                        paint.setTextSize(36f);
+
+                        String msg = "ERROR: " + errorText;
+                        float y = 80f;
+
+                        for (int i = 0; i < msg.length(); i += 60) {
+                            c.drawText(
+                                    msg.substring(i, Math.min(msg.length(), i + 60)),
+                                    30f,
+                                    y,
+                                    paint
+                            );
+                            y += 46f;
+                        }
+                    } finally {
+                        holder.unlockCanvasAndPost(c);
+                    }
+                }
+            }
+
+            sleepQuiet(200);
+        }
+    }
+
     // True berarti terjadi perpindahan putaran atau kehilangan nyawa.
     private boolean update(float dt) {
         int direction;
@@ -232,6 +326,11 @@ public class GameView extends SurfaceView implements Runnable {
         player.setDirection(direction);
 
         if (jump) {
+            // Suara lompat hanya bila lompat benar-benar terjadi (pemain di tanah).
+            if (player.onGround) {
+                sounds.playJump();
+            }
+
             player.requestJump();
         }
 
@@ -246,7 +345,13 @@ public class GameView extends SurfaceView implements Runnable {
             return true;
         }
 
+        int scoreBefore = world.getScore();
         world.collectCoins(p);
+
+        if (world.getScore() > scoreBefore) {
+            sounds.playCoin();
+        }
+
         world.updateEnemies(dt, u);
 
         // Injak dari atas: musuh hilang dan pemain memantul.
@@ -304,6 +409,10 @@ public class GameView extends SurfaceView implements Runnable {
                     .putInt("highScore", highScore)
                     .apply();
         }
+
+        // Musik latar berhenti, bunyi game over.
+        sounds.stopMusic();
+        sounds.playGameOver();
 
         clearInput();
         state = GAME_OVER;
@@ -875,6 +984,8 @@ public class GameView extends SurfaceView implements Runnable {
             return;
         }
 
+        sounds.onResume();
+
         running = true;
         thread = new Thread(this);
         thread.start();
@@ -892,5 +1003,10 @@ public class GameView extends SurfaceView implements Runnable {
         }
 
         clearInput();
+        sounds.onPause();
+    }
+
+    public void release() {
+        sounds.release();
     }
 }

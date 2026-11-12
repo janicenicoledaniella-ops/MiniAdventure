@@ -60,29 +60,52 @@ public class Assets {
     private final Bitmap[] charPreviewBmp = new Bitmap[CHAR_RES.length];  // ukuran di layar pilih karakter
     private boolean facingLeft = false;
 
-    // ---- Animasi sprite (saat ini hanya Ryka / karakter 0) ----
-    private static final int[] ANIM_STAND = {R.drawable.ryka_stand};
-    private static final int[] ANIM_RUN = {
-            R.drawable.ryka_run1, R.drawable.ryka_run2,
-            R.drawable.ryka_run3, R.drawable.ryka_run4
-    };
-    // Urutan: naik cepat -> naik pelan -> puncak -> turun pelan -> turun cepat.
-    private static final int[] ANIM_JUMP = {
-            R.drawable.ryka_jump1, R.drawable.ryka_jump2, R.drawable.ryka_jump3,
-            R.drawable.ryka_jump4, R.drawable.ryka_jump5
+    // ---- Animasi sprite ----
+    // Gambar dicari lewat NAMA di res/drawable, dengan pola:
+    //   <prefix>_stand
+    //   <prefix>_run1 ... <prefix>_run<runCount>
+    //   <prefix>_jump1 ... <prefix>_jump<jumpCount>   (frame terakhir = pose mendarat)
+    // Frame perantara (opsional, bikin lebih halus):
+    //   <prefix>_run<i>_mid   = antara run i dan run i+1 (run terakhir -> run1)
+    //   <prefix>_jump<i>_mid  = antara jump i dan jump i+1 (hanya untuk frame udara)
+    // Karakter yang tidak punya AnimSet (null) memakai gambar statis.
+    private static class AnimSet {
+        final String prefix;
+        final int runCount, jumpCount;
+        final float scale;          // pengali ukuran (1.0 = 1.2 kotak tinggi)
+        final float runCycleUnits;  // jarak lari untuk satu putaran penuh animasi (makin besar = makin lambat)
+        final float runBlend;       // porsi akhir tiap frame lari yang di-crossfade (0..1)
+        Bitmap[] bStand, bRun, bJump;
+
+        AnimSet(String prefix, int runCount, int jumpCount,
+                float scale, float runCycleUnits, float runBlend) {
+            this.prefix = prefix;
+            this.runCount = runCount;
+            this.jumpCount = jumpCount;
+            this.scale = scale;
+            this.runCycleUnits = runCycleUnits;
+            this.runBlend = runBlend;
+        }
+
+        boolean ready() {
+            return bStand != null && bRun != null && bJump != null && bJump.length >= 3;
+        }
+    }
+
+    // Urutan sama dengan CHAR_RES: 0 = Ryka, 1 = Kairo, 2 = Aveline, 3 = Jax, 4 = Vex-9.
+    private final AnimSet[] animSets = {
+            new AnimSet("ryka", 4, 5, 2.4f, 2.4f, 0.4f),   // Ryka
+            null,                                           // Kairo
+            null,                                           // Aveline
+            null,                                           // Jax
+            new AnimSet("vex", 5, 5, 2.4f, 2.8f, 0.5f)      // Vex-9
     };
 
-    private static final float ANIM_STAND_PX = 296f;   // tinggi badan sprite saat berdiri (px)
-    private static final float ANIM_SCALE = 2.4f;   // sebelumnya 1.7f
-    private static final int ANIM_CHAR = 0;            // index karakter yang punya animasi
-    private static final float RUN_STEP_UNITS = 0.6f;  // jarak lari per frame (makin besar = makin lambat)
-    private static final float RUN_BLEND = 0.4f;       // porsi akhir tiap frame lari yang di-crossfade
-    private static final long LAND_MS = 0;          // lama efek jongkok saat mendarat
+    private static final long LAND_MS = 0;             // lama efek jongkok saat mendarat (0 = matikan)
     private static final float FOOT_SINK_UNITS = 0.02f; // koreksi kecil: ruang kosong di bawah kaki pada sprite
     private static final float GROUND_TOP_UNITS = 9f;   // tinggi permukaan tanah di World (9 * unit)
     private static final float GRASS_SINK_UNITS = 0.28f;// kaki turun ke rumput saat berdiri di tanah
 
-    private Bitmap[] animStand, animRun, animJump;
     private int currentChar = 0;
     private float unitPx = 1f;
 
@@ -251,6 +274,7 @@ public class Assets {
         return Bitmap.createBitmap(src, minX, minY, maxX - minX + 1, maxY - minY + 1);
     }
 
+    // Sprite diperkecil supaya hemat memori.
     // Memotong sampai area terlihat, lalu menghitung titik tengah massa horizontal
     // (outCx[0], relatif ke tepi kiri hasil potongan). Garis kecepatan tipis tidak
     // menggeser posisi karakter karena massanya kecil.
@@ -320,17 +344,144 @@ public class Assets {
         return out;
     }
 
+    private int res(String name) {
+        return context.getResources().getIdentifier(name, "drawable", context.getPackageName());
+    }
+
+    // Daftar frame lari: run1, (run1_mid), run2, (run2_mid), ... ; _mid dipakai kalau ada.
+    private int[] runIds(AnimSet set) {
+        java.util.ArrayList<Integer> ids = new java.util.ArrayList<>();
+        for (int i = 1; i <= set.runCount; i++) {
+            int id = res(set.prefix + "_run" + i);
+            if (id == 0) return null;
+            ids.add(id);
+            int mid = res(set.prefix + "_run" + i + "_mid");
+            if (mid != 0) ids.add(mid);
+        }
+        return toArray(ids);
+    }
+
+    // Daftar frame lompat: jump1, (jump1_mid), jump2, ... , jump<N-1>, jump<N> (mendarat).
+    private int[] jumpIds(AnimSet set) {
+        java.util.ArrayList<Integer> ids = new java.util.ArrayList<>();
+        for (int i = 1; i <= set.jumpCount; i++) {
+            int id = res(set.prefix + "_jump" + i);
+            if (id == 0) return null;
+            ids.add(id);
+            if (i <= set.jumpCount - 2) {
+                int mid = res(set.prefix + "_jump" + i + "_mid");
+                if (mid != 0) ids.add(mid);
+            }
+        }
+        return toArray(ids);
+    }
+
+    private int[] toArray(java.util.List<Integer> list) {
+        int[] out = new int[list.size()];
+        for (int i = 0; i < out.length; i++) out[i] = list.get(i);
+        return out;
+    }
+
+    // Apakah semua gambar punya ukuran piksel yang sama (berarti sudah sejajar dalam kanvas)?
+    private boolean allSameSize(int[]... groups) {
+        BitmapFactory.Options o = new BitmapFactory.Options();
+        o.inJustDecodeBounds = true;
+        int w = -1, h = -1;
+        for (int[] g : groups) {
+            for (int id : g) {
+                BitmapFactory.decodeResource(context.getResources(), id, o);
+                if (w < 0) {
+                    w = o.outWidth;
+                    h = o.outHeight;
+                } else if (o.outWidth != w || o.outHeight != h) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    // Tinggi siluet (piksel yang terlihat) pada sebuah gambar.
+    private float silhouetteHeight(int resId) {
+        BitmapFactory.Options opts = new BitmapFactory.Options();
+        opts.inScaled = false;
+        Bitmap bmp = BitmapFactory.decodeResource(context.getResources(), resId, opts);
+        if (bmp == null) return 0f;
+
+        int w = bmp.getWidth();
+        int h = bmp.getHeight();
+        int[] px = new int[w * h];
+        bmp.getPixels(px, 0, w, 0, 0, w, h);
+        bmp.recycle();
+
+        int minY = h, maxY = -1;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if ((px[y * w + x] >>> 24) > 20) {
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                    break;
+                }
+            }
+        }
+        return maxY < minY ? 0f : (maxY - minY + 1);
+    }
+
+    // Untuk gambar yang sudah sejajar dalam kanvas sama: semua frame diperbesar dengan
+    // faktor yang sama, jadi ukuran dan posisi badan tidak berubah-ubah antar frame.
+    private Bitmap[] loadAnimAligned(int[] resIds, float k) {
+        BitmapFactory.Options opts = new BitmapFactory.Options();
+        opts.inScaled = false;
+
+        Bitmap[] out = new Bitmap[resIds.length];
+        for (int i = 0; i < resIds.length; i++) {
+            Bitmap raw = BitmapFactory.decodeResource(
+                    context.getResources(), resIds[i], opts);
+            if (raw == null) return null;
+            out[i] = Bitmap.createScaledBitmap(
+                    raw,
+                    Math.max(1, Math.round(raw.getWidth() * k)),
+                    Math.max(1, Math.round(raw.getHeight() * k)),
+                    true);
+            if (out[i] != raw) raw.recycle();
+        }
+        return out;
+    }
+
     private void loadAnimations(float u) {
         unitPx = u;
-        int canvasH = Math.round(u * 1.2f * CHAR_SCALE[ANIM_CHAR] * ANIM_SCALE);
-        int canvasW = Math.round(canvasH * 1.2f);
-        animStand = loadAnim(ANIM_STAND, canvasW, canvasH);
-        animRun = loadAnim(ANIM_RUN, canvasW, canvasH);
-        animJump = loadAnim(ANIM_JUMP, canvasW, canvasH);
+        for (int i = 0; i < animSets.length; i++) {
+            AnimSet set = animSets[i];
+            if (set == null) continue;
+
+            int standId = res(set.prefix + "_stand");
+            int[] run = runIds(set);
+            int[] jump = jumpIds(set);
+            if (standId == 0 || run == null || jump == null) continue;   // gambar kurang -> pakai statis
+            int[] stand = {standId};
+
+            float charH = u * 1.2f * CHAR_SCALE[i] * set.scale;
+
+            if (allSameSize(stand, run, jump)) {
+                // Gambar sudah sejajar: satu faktor skala untuk semua frame.
+                float sil = silhouetteHeight(standId);
+                float k = sil > 0f ? charH / sil : 1f;
+                set.bStand = loadAnimAligned(stand, k);
+                set.bRun = loadAnimAligned(run, k);
+                set.bJump = loadAnimAligned(jump, k);
+            } else {
+                // Ukuran gambar beda-beda (gambar mentah): dipotong dan disamakan tingginya.
+                int canvasH = Math.round(charH);
+                int canvasW = Math.round(canvasH * 1.2f);
+                set.bStand = loadAnim(stand, canvasW, canvasH);
+                set.bRun = loadAnim(run, canvasW, canvasH);
+                set.bJump = loadAnim(jump, canvasW, canvasH);
+            }
+        }
     }
 
     private void loadCharacters(float u) {
-        loadAnimations(u);          // <-- baris baru ini
+        loadAnimations(u);
 
         BitmapFactory.Options opts = new BitmapFactory.Options();
         opts.inScaled = false;
@@ -366,9 +517,10 @@ public class Assets {
     public void setPlayerCharacter(int index) {
         if (index < 0 || index >= charGameBmp.length) return;
         playerBmp = charGameBmp[index];
-        currentChar = index;        // <-- baris baru ini
+        currentChar = index;
         facingLeft = false;
     }
+
     private final Paint ghostPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
 
     // Menggambar gambar karakter dengan opacity rendah (dipakai layar pilih karakter).
@@ -560,9 +712,10 @@ public class Assets {
         frameB = null;
         frameBAlpha = 0;
 
-        if (currentChar != ANIM_CHAR
-                || animStand == null || animRun == null || animJump == null) {
-            frameA = playerBmp;   // karakter lain tetap gambar statis
+        AnimSet set = (currentChar >= 0 && currentChar < animSets.length)
+                ? animSets[currentChar] : null;
+        if (set == null || !set.ready()) {
+            frameA = playerBmp;   // karakter tanpa animasi tetap gambar statis
             return;
         }
 
@@ -573,7 +726,8 @@ public class Assets {
 
             // v: kecepatan vertikal (unit/detik), negatif = naik.
             float v = p.vy / unitPx;
-            // Petakan v ke posisi kontinu 0..3 di antara jump1..jump4 (jump5 dipakai saat mendarat).
+            // Petakan v ke posisi kontinu 0..3 (naik cepat -> puncak -> turun cepat),
+            // lalu sebar ke semua frame udara. Frame terakhir = pose mendarat, tidak dipakai di sini.
             float pos;
             if (v <= -12f) pos = 0f;
             else if (v <= -5f) pos = (v + 12f) / 7f;
@@ -581,10 +735,12 @@ public class Assets {
             else if (v <= 6f) pos = 2f + v / 6f;
             else pos = 3f;
 
-            int i = Math.min((int) pos, 2);
-            float f = pos - i;
-            frameA = animJump[i];
-            frameB = animJump[i + 1];
+            int air = set.bJump.length - 1;          // jumlah frame udara
+            float posN = pos / 3f * (air - 1);
+            int i = Math.min((int) posN, air - 2);
+            float f = posN - i;
+            frameA = set.bJump[i];
+            frameB = set.bJump[i + 1];
             frameBAlpha = Math.round(smooth(f) * 255f);
             return;
         }
@@ -596,25 +752,25 @@ public class Assets {
         }
 
         if (p.vx != 0f) {
-            float ph = p.x / (unitPx * RUN_STEP_UNITS);
+            float ph = p.x / (unitPx * set.runCycleUnits / set.bRun.length);
             int i = (int) Math.floor(ph);
             float f = ph - i;
-            int n = animRun.length;
-            frameA = animRun[Math.floorMod(i, n)];
+            int n = set.bRun.length;
+            frameA = set.bRun[Math.floorMod(i, n)];
 
-            float start = 1f - RUN_BLEND;
+            float start = 1f - set.runBlend;
             if (f > start) {
-                frameB = animRun[Math.floorMod(i + 1, n)];
-                frameBAlpha = Math.round(smooth((f - start) / RUN_BLEND) * 255f);
+                frameB = set.bRun[Math.floorMod(i + 1, n)];
+                frameBAlpha = Math.round(smooth((f - start) / set.runBlend) * 255f);
             }
         } else {
-            frameA = animStand[0];
+            frameA = set.bStand[0];
         }
 
         // Efek mendarat: jongkok (jump5) memudar ke pose normal.
         float land = LAND_MS > 0 ? 1f - (now - landStartMs) / (float) LAND_MS : 0f;
         if (land > 0f) {
-            frameB = animJump[4];
+            frameB = set.bJump[set.bJump.length - 1];
             frameBAlpha = Math.round(smooth(land) * 255f);
         }
     }
