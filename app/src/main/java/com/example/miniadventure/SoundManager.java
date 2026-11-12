@@ -16,7 +16,8 @@ import java.util.Set;
 // Mengelola suara game:
 //  - efek pendek (koin, lompat, game over) lewat SoundPool
 //  - musik latar (waktu main) lewat MediaPlayer, diulang terus
-// File suara ada di res/raw: coin.mp3, lompat.mp3, game_over.mp3, waktu_main.mp3
+// File suara ada di res/raw: coin.mp3, lompat.mp3, game_over.mp3, waktu_main.mp3,
+//  jatuh.mp3, jatuh2.mp3, matikan_enemy.mp3
 //
 // Semua inisialisasi suara dikerjakan di background thread supaya
 // tidak memblokir main thread (penyebab layar hitam saat startup).
@@ -32,12 +33,31 @@ public class SoundManager {
     private static final float COIN_VOLUME = 1.0f;
     private static final float JUMP_VOLUME = 0.9f;
     private static final float GAME_OVER_VOLUME = 0.8f;
+    private static final float FALL_VOLUME = 0.9f;
+    private static final float FALL_FINAL_VOLUME = 1.0f;
+    private static final float ENEMY_DIE_VOLUME = 1.0f;
+
+    // Kecepatan putar suara jatuh (0.5 sampai 2.0). 1.0 = normal.
+    // Makin besar = makin cepat & pendek. Naikkan kalau masih terasa lambat.
+    private static final float FALL_RATE = 1.3f;
+
+    // Jeda (ms) dari jatuh2.mp3 mulai sampai suara game over boleh bunyi.
+    // Kira-kira panjang jatuh2 setelah dipercepat. Naikkan kalau masih bertumpuk.
+    private static final long GAME_OVER_AFTER_FALL_MS = 600;
 
     private final Context context;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
+    // Suara game over yang ditunda (dipakai setelah jatuh2.mp3 selesai).
+    private final Runnable delayedGameOver = new Runnable() {
+        @Override
+        public void run() {
+            playGameOver();
+        }
+    };
+
     private volatile SoundPool soundPool;
-    private volatile int coinId, jumpId, gameOverId;
+    private volatile int coinId, jumpId, gameOverId, fallId, fallFinalId, enemyDieId;
     private final Set<Integer> loaded =
             Collections.synchronizedSet(new HashSet<Integer>());
 
@@ -86,7 +106,7 @@ public class SoundManager {
                         Log.d(TAG, "suara siap, id=" + sampleId);
 
                         // Semua efek sudah dimuat (hanya tampil selama SHOW_ERRORS = true).
-                        if (loaded.size() == 3) {
+                        if (loaded.size() == 6) {
                             info(music != null
                                     ? "Semua suara berhasil dimuat. Naikkan volume media kalau tidak terdengar."
                                     : "Efek suara OK, tapi musik belum/gagal dimuat.");
@@ -100,6 +120,9 @@ public class SoundManager {
             coinId = pool.load(context, R.raw.coin, 1);
             jumpId = pool.load(context, R.raw.lompat, 1);
             gameOverId = pool.load(context, R.raw.game_over, 1);
+            fallId = pool.load(context, R.raw.jatuh, 1);
+            fallFinalId = pool.load(context, R.raw.jatuh2, 1);
+            enemyDieId = pool.load(context, R.raw.matikan_enemy, 1);
 
             synchronized (this) {
                 if (released) {
@@ -194,6 +217,10 @@ public class SoundManager {
     }
 
     private void play(int id, float volume) {
+        play(id, volume, 1f);
+    }
+
+    private void play(int id, float volume, float rate) {
         SoundPool pool = soundPool;
 
         if (pool == null) {
@@ -209,7 +236,7 @@ public class SoundManager {
             return;
         }
 
-        int stream = pool.play(id, volume, volume, 1, 0, 1f);
+        int stream = pool.play(id, volume, volume, 1, 0, rate);
         if (stream == 0) {
             Log.w(TAG, "soundPool.play gagal untuk id=" + id);
         }
@@ -227,9 +254,33 @@ public class SoundManager {
         play(gameOverId, GAME_OVER_VOLUME);
     }
 
+    // Game over setelah jatuh: tunggu jatuh2.mp3 selesai dulu.
+    public void playGameOverAfterFall() {
+        mainHandler.removeCallbacks(delayedGameOver);
+        mainHandler.postDelayed(delayedGameOver, GAME_OVER_AFTER_FALL_MS);
+    }
+
+    // Jatuh ke jurang.
+    public void playFall() {
+        play(fallId, FALL_VOLUME, FALL_RATE);
+    }
+
+    // Jatuh ke jurang di nyawa terakhir (heart habis).
+    public void playFallFinal() {
+        play(fallFinalId, FALL_FINAL_VOLUME, FALL_RATE);
+    }
+
+    // Musuh jamur mati diinjak.
+    public void playEnemyDie() {
+        play(enemyDieId, ENEMY_DIE_VOLUME);
+    }
+
     // Musik dimulai dari awal setiap permainan baru.
     public synchronized void startMusic() {
         musicWanted = true;
+
+        // Permainan baru: batalkan suara game over yang masih menunggu.
+        mainHandler.removeCallbacks(delayedGameOver);
 
         if (music == null) {
             // Belum siap: akan diputar otomatis di akhir initMusic().
@@ -302,6 +353,7 @@ public class SoundManager {
 
     public synchronized void release() {
         released = true;
+        mainHandler.removeCallbacks(delayedGameOver);
 
         if (music != null) {
             try {

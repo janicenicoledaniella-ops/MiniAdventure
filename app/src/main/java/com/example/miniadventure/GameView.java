@@ -60,6 +60,11 @@ public class GameView extends SurfaceView implements Runnable {
     private boolean levelBuilt;
 
     private int lives;
+
+    // Suara jatuh dibunyikan saat pemain mulai tenggelam ke jurang (bukan saat sudah di dasar layar).
+    // Tanah ada di y = 9 satuan, badan pemain setinggi 1. Angka lebih kecil = suara lebih awal.
+    private static final float FALL_SOUND_Y = 8.6f;
+    private boolean fallSoundPlayed;
     private int round;
     private int highScore;
 
@@ -132,6 +137,8 @@ public class GameView extends SurfaceView implements Runnable {
 
         player.reset(u);
         player.setSpeedMultiplier(1f);
+
+        fallSoundPlayed = false;
 
         camX = 0;
     }
@@ -340,8 +347,18 @@ public class GameView extends SurfaceView implements Runnable {
 
         RectF p = player.getHitbox(u);
 
+        // Pemain sudah lewat tepi tanah dan pasti jatuh: bunyikan suara sekarang.
+        if (!fallSoundPlayed && !player.onGround && player.vy > 0
+                && player.y > FALL_SOUND_Y * u) {
+            fallSoundPlayed = true;
+
+            // Selalu jatuh.mp3 (termasuk di nyawa terakhir).
+            // Kalau nyawa terakhir, jatuh2.mp3 menyusul di finishGame().
+            sounds.playFall();
+        }
+
         if (player.hasFallen(u)) {
-            loseLife();
+            loseLife(true);   // true = jatuh ke jurang
             return true;
         }
 
@@ -362,6 +379,8 @@ public class GameView extends SurfaceView implements Runnable {
         );
 
         if (stomped != null) {
+            sounds.playEnemyDie();
+
             player.y = stomped.rect.top - player.h;
             player.vy = -10f * u;
             player.onGround = false;
@@ -371,7 +390,7 @@ public class GameView extends SurfaceView implements Runnable {
 
         // Tabrak samping atau bawah: nyawa berkurang.
         if (world.hitsEnemy(p)) {
-            loseLife();
+            loseLife(false);  // false = kena musuh
             return true;
         }
 
@@ -386,12 +405,12 @@ public class GameView extends SurfaceView implements Runnable {
         return false;
     }
 
-    private void loseLife() {
+    private void loseLife(boolean fell) {
         lives--;
 
         if (lives <= 0) {
             lives = 0;
-            finishGame();
+            finishGame(fell);
         } else {
             // Skor, putaran, dan kecepatan tetap.
             // Koin yang diambil dan musuh yang kalah tetap hilang.
@@ -399,7 +418,7 @@ public class GameView extends SurfaceView implements Runnable {
         }
     }
 
-    private void finishGame() {
+    private void finishGame(boolean fell) {
         int totalScore = world.getScore();
 
         if (totalScore > highScore) {
@@ -410,9 +429,17 @@ public class GameView extends SurfaceView implements Runnable {
                     .apply();
         }
 
-        // Musik latar berhenti, bunyi game over.
+        // Musik latar berhenti.
         sounds.stopMusic();
-        sounds.playGameOver();
+
+        if (fell) {
+            // Urutan: jatuh.mp3 (sudah bunyi saat jatuh) -> jatuh2.mp3 -> game over.
+            sounds.playFallFinal();
+            sounds.playGameOverAfterFall();
+        } else {
+            // Kena musuh di nyawa terakhir: langsung suara game over.
+            sounds.playGameOver();
+        }
 
         clearInput();
         state = GAME_OVER;
