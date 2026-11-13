@@ -71,6 +71,12 @@ public class GameView extends SurfaceView implements Runnable {
     private float camX;
     private float speedMultiplier = 1f;
 
+    // Layar loading + pemuatan gambar di thread terpisah.
+    private final LoadingScreen loadingScreen;
+    private Thread loaderThread;
+    private volatile boolean assetsLoaded;
+    private volatile Throwable loadError;
+
     public GameView(Context context) {
         super(context);
 
@@ -78,6 +84,7 @@ public class GameView extends SurfaceView implements Runnable {
         assets = new Assets(context);
         sounds = new SoundManager(context);
         menu = new CharacterSelectScreen(assets);
+        loadingScreen = new LoadingScreen(context);
 
         gameOverBmp = BitmapFactory.decodeResource(
                 getResources(),
@@ -185,31 +192,68 @@ public class GameView extends SurfaceView implements Runnable {
             }
 
             if (!levelBuilt) {
-                sw = getWidth();
-                sh = getHeight();
+                if (loaderThread == null) {
+                    sw = getWidth();
+                    sh = getHeight();
 
-                if (sw == 0 || sh == 0) {
-                    last = System.nanoTime();
-                    sleepQuiet(5);
-                    continue;
+                    if (sw == 0 || sh == 0) {
+                        last = System.nanoTime();
+                        sleepQuiet(5);
+                        continue;
+                    }
+
+                    u = sh / 12f;
+
+                    // Mulai layar loading, lalu muat gambar di thread terpisah
+                    // supaya animasi loading tetap berjalan mulus.
+                    loadingScreen.begin(sw, sh, u);
+
+                    loaderThread = new Thread(new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                assets.load(u);
+                            } catch (Throwable t) {
+                                Log.e(TAG, "Gagal memuat gambar", t);
+                                loadError = t;
+                            }
+
+                            assetsLoaded = true;
+                        }
+                    }, "asset-loader");
+
+                    loaderThread.start();
                 }
 
-                u = sh / 12f;
+                drawLoadingFrame();
 
-                // Gambar layar loading dulu supaya layar tidak hitam.
-                drawLoading("Loading...");
+                if (assetsLoaded) {
+                    loadingScreen.markDone();
+                }
 
-                levelBuilt = true;
+                if (assetsLoaded && loadingScreen.isFinished()) {
+                    try {
+                        loaderThread.join();
+                    } catch (InterruptedException ignored) {
+                        Thread.currentThread().interrupt();
+                    }
 
-                Log.d(TAG, "load gambar mulai, sw=" + sw + " sh=" + sh);
-                assets.load(u);
-                Log.d(TAG, "load gambar selesai");
+                    if (loadError != null) {
+                        throw new RuntimeException(loadError);
+                    }
 
-                menu.layout(sw, sh, u);
-                state = SELECT_CHARACTER;
-                Log.d(TAG, "menu siap");
+                    loadingScreen.release();
 
-                last = System.nanoTime();
+                    menu.layout(sw, sh, u);
+                    state = SELECT_CHARACTER;
+                    levelBuilt = true;
+                    Log.d(TAG, "menu siap");
+
+                    last = System.nanoTime();
+                } else {
+                    last = System.nanoTime();
+                    continue;
+                }
             }
 
             long now = System.nanoTime();
@@ -263,7 +307,8 @@ public class GameView extends SurfaceView implements Runnable {
         }
     }
 
-    private void drawLoading(String text) {
+    // Menggambar satu frame layar loading.
+    private void drawLoadingFrame() {
         Canvas c = holder.lockCanvas();
 
         if (c == null) {
@@ -271,12 +316,7 @@ public class GameView extends SurfaceView implements Runnable {
         }
 
         try {
-            c.drawColor(Color.rgb(11, 26, 71));
-            paint.setStyle(Paint.Style.FILL);
-            paint.setColor(Color.WHITE);
-            paint.setTextAlign(Paint.Align.CENTER);
-            paint.setTextSize(Math.max(24f, u * 0.6f));
-            c.drawText(text, sw / 2f, sh / 2f, paint);
+            loadingScreen.draw(c);
         } finally {
             holder.unlockCanvasAndPost(c);
         }
@@ -481,7 +521,6 @@ public class GameView extends SurfaceView implements Runnable {
                 assets.drawEnemy(c, enemy);
             }
 
-            // Bendera.
             // Bendera.
             if (assets.flagBmp != null) {
                 float flagHeight = 2.5f * u;

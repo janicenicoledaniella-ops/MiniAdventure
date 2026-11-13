@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.MiniAdventure" parent="Base.Theme.MiniAdventure">
-        <item name="android:windowSplashScreenBackground">#000000</item>
+    <style name="Theme.MiniAdventure" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/black</item>
     </style>
 </resources>
