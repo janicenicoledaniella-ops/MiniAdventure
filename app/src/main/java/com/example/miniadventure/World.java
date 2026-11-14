@@ -11,10 +11,15 @@ public class World {
     public final List<RectF> platforms = new ArrayList<>();
     public final List<RectF> coins = new ArrayList<>();
     public final List<Enemy> enemies = new ArrayList<>();
+    public final List<Treasure> treasures = new ArrayList<>();
 
     public RectF goal;
 
     private final Random random = new Random();
+
+    // Peluang munculnya peti harta di tiap level (0..1). Maksimal 1 peti per level.
+    // Makin kecil angkanya, makin jarang muncul.
+    private static final float TREASURE_CHANCE = 0.30f;
 
     private int score;
 
@@ -38,6 +43,7 @@ public class World {
         platforms.clear();
         coins.clear();
         enemies.clear();
+        treasures.clear();
 
         // Skor tetap berlanjut antarputaran.
         round = Math.max(1, round);
@@ -59,6 +65,9 @@ public class World {
         // Area awal tetap aman tanpa musuh.
         addGround(0, 14, u);
         addCoins(rand(4, 7), 8, 3, u);
+
+        // Daftar tanah utama (x, lebar): tempat peti harta boleh muncul.
+        List<float[]> groundSections = new ArrayList<>();
 
         float end = 14;
 
@@ -127,6 +136,7 @@ public class World {
             float width = rand(12, 16);
 
             addGround(x, width, u);
+            groundSections.add(new float[]{x, width});
 
             // Platform atas tidak selalu muncul.
             RectF floatingPlatform = null;
@@ -240,6 +250,9 @@ public class World {
 
             end = x + width;
         }
+
+        // Peti harta: jarang muncul.
+        maybeSpawnTreasure(groundSections, u);
 
         buildFinish(
                 end,
@@ -357,6 +370,63 @@ public class World {
                 score += 10;
             }
         }
+    }
+
+    // Peti harta diletakkan di tanah utama (bukan area awal, bukan pijakan kecil)
+    // dan dijaga supaya tidak menumpuk dengan koin.
+    private void maybeSpawnTreasure(List<float[]> sections, float u) {
+        if (sections.isEmpty() || random.nextFloat() >= TREASURE_CHANCE) {
+            return;
+        }
+
+        float[] section = sections.get(random.nextInt(sections.size()));
+        float sectionX = section[0];
+        float sectionWidth = section[1];
+
+        for (int attempt = 0; attempt < 25; attempt++) {
+            float x = sectionX + rand(1.5f, sectionWidth - 2.7f);
+
+            Treasure treasure = new Treasure(x, u);
+
+            // Beri jarak kecil dari koin di sekitarnya.
+            RectF area = new RectF(treasure.rect);
+            area.inset(-0.3f * u, 0);
+
+            boolean overlapsCoin = false;
+
+            for (RectF coin : coins) {
+                if (RectF.intersects(area, coin)) {
+                    overlapsCoin = true;
+                    break;
+                }
+            }
+
+            if (!overlapsCoin) {
+                treasures.add(treasure);
+                return;
+            }
+        }
+    }
+
+    // Peti yang baru disentuh pemain dibuka. Mengembalikan peti itu (atau null).
+    public Treasure openTreasure(RectF playerRect) {
+        for (Treasure treasure : treasures) {
+            if (!treasure.opened
+                    && RectF.intersects(playerRect, treasure.rect)) {
+
+                treasure.opened = true;
+                treasure.openedAtNs = System.nanoTime();
+
+                return treasure;
+            }
+        }
+
+        return null;
+    }
+
+    // Menambah skor/koin langsung (dipakai hadiah peti harta).
+    public void addScore(int amount) {
+        score += amount;
     }
 
     public Enemy stompEnemy(

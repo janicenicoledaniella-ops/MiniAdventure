@@ -71,6 +71,20 @@ public class GameView extends SurfaceView implements Runnable {
     private float camX;
     private float speedMultiplier = 1f;
 
+    // ---- Treasure (peti harta) ----
+    private static final int MAX_LIVES = 5;               // batas nyawa dari heart
+    private static final float SPEED_BONUS_STEP = 0.15f;  // tiap speed treasure: +15% kecepatan
+    private static final float SPEED_BONUS_MAX = 0.60f;   // batas total bonus kecepatan
+    private static final int COIN_REWARD = 100;           // koin dari coin treasure
+    private static final long TOAST_NS = 2_600_000_000L;  // lama tampilan "kamu dapat ..."
+
+    private final java.util.Random treasureRandom = new java.util.Random();
+    private float playerSpeedBonus;
+    private int toastType = -1;
+    private long toastStartNs;
+    private String toastMain = "";
+    private String toastSub = "";
+
     // Layar loading + pemuatan gambar di thread terpisah.
     private final LoadingScreen loadingScreen;
     private Thread loaderThread;
@@ -120,6 +134,8 @@ public class GameView extends SurfaceView implements Runnable {
         lives = 3;
         round = 1;
         speedMultiplier = 1f;
+        playerSpeedBonus = 0f;
+        toastType = -1;
 
         assets.setBackgroundByRound(round);
         buildRound();
@@ -143,7 +159,7 @@ public class GameView extends SurfaceView implements Runnable {
         clearInput();
 
         player.reset(u);
-        player.setSpeedMultiplier(1f);
+        player.setSpeedMultiplier(1f + playerSpeedBonus);
 
         fallSoundPlayed = false;
 
@@ -409,6 +425,13 @@ public class GameView extends SurfaceView implements Runnable {
             sounds.playCoin();
         }
 
+        // Peti harta: disentuh = terbuka, hadiah diacak (heart / speed / coin).
+        Treasure openedTreasure = world.openTreasure(p);
+
+        if (openedTreasure != null) {
+            giveTreasureReward(openedTreasure);
+        }
+
         world.updateEnemies(dt, u);
 
         // Injak dari atas: musuh hilang dan pemain memantul.
@@ -443,6 +466,54 @@ public class GameView extends SurfaceView implements Runnable {
         camX = player.getCameraX(sw);
 
         return false;
+    }
+
+    // Hadiah peti diacak. Heart dilewati kalau nyawa sudah penuh,
+    // speed dilewati kalau bonus kecepatan sudah maksimal, supaya tidak ada hadiah yang sia-sia.
+    private void giveTreasureReward(Treasure treasure) {
+        int[] pool = new int[3];
+        int count = 0;
+
+        if (lives < MAX_LIVES) {
+            pool[count++] = Treasure.HEART;
+        }
+
+        if (playerSpeedBonus < SPEED_BONUS_MAX - 0.001f) {
+            pool[count++] = Treasure.SPEED;
+        }
+
+        pool[count++] = Treasure.COIN;
+
+        int type = pool[treasureRandom.nextInt(count)];
+
+        if (type == Treasure.HEART) {
+            lives++;
+
+            toastMain = "HEART +1";
+            toastSub = "Nyawa: " + lives;
+        } else if (type == Treasure.SPEED) {
+            playerSpeedBonus = Math.min(
+                    SPEED_BONUS_MAX,
+                    playerSpeedBonus + SPEED_BONUS_STEP
+            );
+
+            player.setSpeedMultiplier(1f + playerSpeedBonus);
+
+            toastMain = "SPEED UP!";
+            toastSub = "Kecepatan +" + Math.round(playerSpeedBonus * 100f) + "%";
+        } else {
+            world.addScore(COIN_REWARD);
+
+            toastMain = "COIN +" + COIN_REWARD;
+            toastSub = "Total koin: " + world.getScore();
+        }
+
+        treasure.type = type;
+
+        toastType = type;
+        toastStartNs = System.nanoTime();
+
+        sounds.playCoin();
     }
 
     private void loseLife(boolean fell) {
@@ -516,6 +587,11 @@ public class GameView extends SurfaceView implements Runnable {
                 assets.drawCoin(c, coin);
             }
 
+            // Peti harta (tertutup sampai disentuh).
+            for (Treasure treasure : world.treasures) {
+                assets.drawTreasure(c, treasure, u);
+            }
+
             // Musuh.
             for (Enemy enemy : world.enemies) {
                 assets.drawEnemy(c, enemy);
@@ -555,6 +631,7 @@ public class GameView extends SurfaceView implements Runnable {
 
             drawHud(c);
             drawControls(c);
+            drawTreasureToast(c);
 
             if (state == GAME_OVER) {
                 drawGameOver(c);
@@ -610,6 +687,29 @@ public class GameView extends SurfaceView implements Runnable {
             );
 
             c.drawBitmap(heart, null, heartRect, paint);
+        }
+
+        // Nyawa lebih dari 3 (dari treasure heart): sisanya ditampilkan sebagai "+N".
+        if (lives > 3) {
+            String extra = "+" + (lives - 3);
+
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(u * 0.42f);
+            paint.setTypeface(Typeface.DEFAULT_BOLD);
+
+            float extraX = u * 4.0f;
+            float extraY = y + u * 1.4f;
+
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(u * 0.09f);
+            paint.setColor(Color.rgb(90, 15, 25));
+            c.drawText(extra, extraX, extraY, paint);
+
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.rgb(255, 120, 130));
+            c.drawText(extra, extraX, extraY, paint);
+
+            paint.setTextAlign(Paint.Align.LEFT);
         }
 
         // Badge level di sebelah kanan hati.
@@ -689,6 +789,166 @@ public class GameView extends SurfaceView implements Runnable {
                 paint
         );
 
+        paint.setTextAlign(Paint.Align.LEFT);
+    }
+
+    // Teks berwarna dengan garis tepi gelap supaya mudah dibaca.
+    private void drawOutlinedText(
+            Canvas c,
+            String text,
+            float x,
+            float y,
+            int fill,
+            int alpha
+    ) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(u * 0.09f);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        paint.setColor(Color.argb(alpha, 70, 38, 12));
+        c.drawText(text, x, y, paint);
+
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.argb(
+                alpha,
+                Color.red(fill),
+                Color.green(fill),
+                Color.blue(fill)
+        ));
+        c.drawText(text, x, y, paint);
+    }
+
+    // Setelah membuka peti: tampilkan peti terbuka berisi hadiahnya + keterangan.
+    private void drawTreasureToast(Canvas c) {
+        if (toastType < 0) {
+            return;
+        }
+
+        long elapsed = System.nanoTime() - toastStartNs;
+
+        if (elapsed < 0 || elapsed > TOAST_NS) {
+            toastType = -1;
+            return;
+        }
+
+        float sec = elapsed / 1_000_000_000f;
+        float total = TOAST_NS / 1_000_000_000f;
+
+        // Muncul cepat, memudar di akhir.
+        float fadeIn = Math.min(1f, sec / 0.18f);
+        float fadeOut = Math.min(1f, (total - sec) / 0.45f);
+        float fade = Math.max(0f, Math.min(fadeIn, fadeOut));
+        int alpha = Math.round(255f * fade);
+
+        // Sedikit membesar saat muncul.
+        float pop = sec < 0.3f ? 1f - sec / 0.3f : 0f;
+        float scale = 0.8f + 0.2f * fadeIn + 0.06f * pop;
+
+        float panelW = Math.min(sw * 0.7f, 7.2f * u);
+        float panelH = 2.1f * u;
+        float cx = sw / 2f;
+        float top = 1.6f * u;
+
+        RectF panel = new RectF(
+                cx - panelW / 2f,
+                top,
+                cx + panelW / 2f,
+                top + panelH
+        );
+
+        c.save();
+        c.scale(scale, scale, cx, panel.centerY());
+
+        // Papan kayu (warna sama dengan badge level).
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.argb(Math.round(alpha * 0.93f), 139, 90, 43));
+        c.drawRoundRect(panel, 0.25f * u, 0.25f * u, paint);
+
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(u * 0.06f);
+        paint.setColor(Color.argb(alpha, 85, 50, 25));
+        c.drawRoundRect(panel, 0.25f * u, 0.25f * u, paint);
+
+        paint.setStyle(Paint.Style.FILL);
+
+        // Peti terbuka di kiri, sedikit menonjol ke atas panel.
+        RectF iconBox = new RectF(
+                panel.left + 0.25f * u,
+                panel.bottom - 0.1f * u - 2.5f * u,
+                panel.left + 0.25f * u + 2.3f * u,
+                panel.bottom - 0.1f * u
+        );
+
+        assets.drawTreasureIcon(c, toastType, iconBox, alpha);
+
+        // Teks di kanan peti.
+        float textX = iconBox.right + 0.3f * u;
+        float textMaxW = panel.right - 0.25f * u - textX;
+
+        int mainColor;
+
+        if (toastType == Treasure.HEART) {
+            mainColor = Color.rgb(255, 110, 120);
+        } else if (toastType == Treasure.SPEED) {
+            mainColor = Color.rgb(255, 225, 70);
+        } else {
+            mainColor = Color.rgb(255, 215, 90);
+        }
+
+        paint.setTextAlign(Paint.Align.LEFT);
+        paint.setTypeface(Typeface.DEFAULT_BOLD);
+
+        // Judul kecil.
+        paint.setTextSize(u * 0.32f);
+        drawOutlinedText(
+                c,
+                "KAMU DAPAT",
+                textX,
+                panel.top + 0.62f * u,
+                Color.rgb(255, 241, 194),
+                alpha
+        );
+
+        // Hadiah (diperkecil otomatis kalau terlalu lebar).
+        float mainSize = u * 0.62f;
+        paint.setTextSize(mainSize);
+
+        float mainWidth = paint.measureText(toastMain);
+
+        if (mainWidth > textMaxW && mainWidth > 0f) {
+            mainSize *= textMaxW / mainWidth;
+            paint.setTextSize(mainSize);
+        }
+
+        drawOutlinedText(
+                c,
+                toastMain,
+                textX,
+                panel.top + 1.3f * u,
+                mainColor,
+                alpha
+        );
+
+        // Keterangan.
+        paint.setTextSize(u * 0.34f);
+
+        float subWidth = paint.measureText(toastSub);
+
+        if (subWidth > textMaxW && subWidth > 0f) {
+            paint.setTextSize(u * 0.34f * textMaxW / subWidth);
+        }
+
+        drawOutlinedText(
+                c,
+                toastSub,
+                textX,
+                panel.top + 1.78f * u,
+                Color.WHITE,
+                alpha
+        );
+
+        c.restore();
+
+        paint.setStyle(Paint.Style.FILL);
         paint.setTextAlign(Paint.Align.LEFT);
     }
 

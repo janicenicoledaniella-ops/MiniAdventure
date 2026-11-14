@@ -42,6 +42,14 @@ public class Assets {
     private Bitmap groundBmp;
     private Bitmap playerBmp;
 
+    // Peti harta: tertutup, dan tiga versi terbuka sesuai isinya.
+    private Bitmap treasureClosedBmp;
+    private Bitmap treasureHeartBmp;
+    private Bitmap treasureSpeedBmp;
+    private Bitmap treasureCoinBmp;
+    private final Paint treasurePaint =
+            new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+
     // Karakter yang bisa dipilih: 0 = girl 1, 1 = boy 1, 2 = girl 2, 3 = boy 2, 4 = robot.
     private static final int[] CHAR_RES = {
             R.drawable.chara_girl1,
@@ -189,6 +197,11 @@ public class Assets {
                 R.drawable.enemy
         );
 
+        treasureClosedBmp = decodeTreasure(R.drawable.treasure_closed);
+        treasureHeartBmp = decodeTreasure(R.drawable.treasure_heart);
+        treasureSpeedBmp = decodeTreasure(R.drawable.treasure_speed);
+        treasureCoinBmp = decodeTreasure(R.drawable.treasure_coin);
+
         loadCharacters(u);
 
         Bitmap rawFlag = BitmapFactory.decodeResource(
@@ -235,6 +248,31 @@ public class Assets {
             }
         }
 
+    }
+
+    private Bitmap decodeTreasure(int resId) {
+        BitmapFactory.Options opts = new BitmapFactory.Options();
+        opts.inScaled = false;
+
+        return BitmapFactory.decodeResource(
+                context.getResources(),
+                resId,
+                opts
+        );
+    }
+
+    // Gambar peti yang sudah terbuka sesuai isinya.
+    private Bitmap getTreasureOpenedBitmap(int type) {
+        switch (type) {
+            case Treasure.HEART:
+                return treasureHeartBmp;
+            case Treasure.SPEED:
+                return treasureSpeedBmp;
+            case Treasure.COIN:
+                return treasureCoinBmp;
+            default:
+                return treasureClosedBmp;
+        }
     }
 
     public Bitmap getLevelBadge(int round) {
@@ -678,6 +716,78 @@ public class Assets {
         if (coinBmp != null) {
             c.drawBitmap(coinBmp, null, dst, paint);
         }
+    }
+
+    // Peti harta di dalam level: tertutup sampai disentuh, lalu menampilkan isinya.
+    public void drawTreasure(Canvas c, Treasure treasure, float u) {
+        Bitmap bmp = treasure.opened
+                ? getTreasureOpenedBitmap(treasure.type)
+                : treasureClosedBmp;
+
+        if (bmp == null) {
+            return;
+        }
+
+        float width = 1.25f * u;
+        float height = width * bmp.getHeight() / bmp.getWidth();
+
+        float cx = treasure.rect.centerX();
+        float bottom = treasure.rect.bottom + 0.12f * u;   // sedikit tenggelam ke rumput
+
+        // "Pop" kecil sesaat setelah dibuka.
+        float pop = 0f;
+
+        if (treasure.opened) {
+            float ms = (System.nanoTime() - treasure.openedAtNs) / 1_000_000f;
+
+            if (ms >= 0f && ms < 300f) {
+                pop = 1f - ms / 300f;
+            }
+        }
+
+        float scale = 1f + 0.18f * pop;
+
+        RectF dst = new RectF(
+                cx - width / 2f,
+                bottom - height,
+                cx + width / 2f,
+                bottom
+        );
+
+        c.save();
+        c.scale(scale, scale, cx, bottom);
+        treasurePaint.setAlpha(255);
+        c.drawBitmap(bmp, null, dst, treasurePaint);
+        c.restore();
+    }
+
+    // Gambar peti terbuka (isi hadiah) untuk pemberitahuan di layar.
+    // Muat di dalam box, rata bawah dan tengah horizontal.
+    public void drawTreasureIcon(Canvas c, int type, RectF box, int alpha) {
+        Bitmap bmp = getTreasureOpenedBitmap(type);
+
+        if (bmp == null) {
+            return;
+        }
+
+        float k = Math.min(
+                box.width() / bmp.getWidth(),
+                box.height() / bmp.getHeight()
+        );
+
+        float w = bmp.getWidth() * k;
+        float h = bmp.getHeight() * k;
+
+        RectF dst = new RectF(
+                box.centerX() - w / 2f,
+                box.bottom - h,
+                box.centerX() + w / 2f,
+                box.bottom
+        );
+
+        treasurePaint.setAlpha(Math.max(0, Math.min(255, alpha)));
+        c.drawBitmap(bmp, null, dst, treasurePaint);
+        treasurePaint.setAlpha(255);
     }
 
     public void drawEnemy(Canvas c, Enemy e) {
