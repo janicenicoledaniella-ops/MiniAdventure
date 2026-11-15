@@ -72,7 +72,7 @@ public class GameView extends SurfaceView implements Runnable {
     private float speedMultiplier = 1f;
 
     // ---- Treasure (peti harta) ----
-    private static final int MAX_LIVES = 5;               // batas nyawa dari heart
+    private static final int MAX_LIVES = 3;               // batas nyawa (sama dengan 3 hati di HUD)
     private static final float SPEED_BONUS_STEP = 0.15f;  // tiap speed treasure: +15% kecepatan
     private static final float SPEED_BONUS_MAX = 0.60f;   // batas total bonus kecepatan
     private static final int COIN_REWARD = 100;           // koin dari coin treasure
@@ -490,7 +490,7 @@ public class GameView extends SurfaceView implements Runnable {
             lives++;
 
             toastMain = "HEART +1";
-            toastSub = "Nyawa: " + lives;
+            toastSub = "Nyawa bertambah";
         } else if (type == Treasure.SPEED) {
             playerSpeedBonus = Math.min(
                     SPEED_BONUS_MAX,
@@ -687,29 +687,6 @@ public class GameView extends SurfaceView implements Runnable {
             );
 
             c.drawBitmap(heart, null, heartRect, paint);
-        }
-
-        // Nyawa lebih dari 3 (dari treasure heart): sisanya ditampilkan sebagai "+N".
-        if (lives > 3) {
-            String extra = "+" + (lives - 3);
-
-            paint.setTextAlign(Paint.Align.CENTER);
-            paint.setTextSize(u * 0.42f);
-            paint.setTypeface(Typeface.DEFAULT_BOLD);
-
-            float extraX = u * 4.0f;
-            float extraY = y + u * 1.4f;
-
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(u * 0.09f);
-            paint.setColor(Color.rgb(90, 15, 25));
-            c.drawText(extra, extraX, extraY, paint);
-
-            paint.setStyle(Paint.Style.FILL);
-            paint.setColor(Color.rgb(255, 120, 130));
-            c.drawText(extra, extraX, extraY, paint);
-
-            paint.setTextAlign(Paint.Align.LEFT);
         }
 
         // Badge level di sebelah kanan hati.

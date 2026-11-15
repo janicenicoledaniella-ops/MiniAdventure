@@ -732,7 +732,17 @@ public class Assets {
         float height = width * bmp.getHeight() / bmp.getWidth();
 
         float cx = treasure.rect.centerX();
-        float bottom = treasure.rect.bottom + 0.12f * u;   // sedikit tenggelam ke rumput
+        float bottom = treasure.rect.bottom;
+
+        if (treasure.place == Treasure.PLACE_GROUND) {
+            bottom += 0.12f * u;   // sedikit tenggelam ke rumput
+        } else if (treasure.place == Treasure.PLACE_BRICK) {
+            bottom += 0.05f * u;   // sedikit tenggelam ke brick
+        } else {
+            // Peti melayang: naik-turun pelan.
+            double sec = System.nanoTime() / 1e9;
+            bottom += (float) Math.sin(sec * 2.2) * 0.1f * u;
+        }
 
         // "Pop" kecil sesaat setelah dibuka.
         float pop = 0f;

@@ -17,14 +17,24 @@ public class World {
 
     private final Random random = new Random();
 
-    // Peluang munculnya peti harta di tiap level (0..1). Maksimal 1 peti per level.
-    // Makin kecil angkanya, makin jarang muncul.
-    private static final float TREASURE_CHANCE = 0.30f;
+    // Peti harta dibuat jarang muncul:
+    // - TREASURE_CHANCE: peluang muncul di sebuah level (0..1), maksimal 1 peti per level.
+    // - TREASURE_COOLDOWN_LEVELS: setelah ada peti, sekian level berikutnya pasti tanpa peti.
+    // Makin kecil peluang / makin besar cooldown, makin jarang muncul.
+    private static final float TREASURE_CHANCE = 0.20f;
+    private static final int TREASURE_COOLDOWN_LEVELS = 2;
+
+    private int treasureCooldown;
+    private int lastTreasurePlace = -1;
 
     private int score;
 
     public void resetScore() {
         score = 0;
+
+        // Permainan baru: hitungan jarak antarpeti ikut diulang.
+        treasureCooldown = 0;
+        lastTreasurePlace = -1;
     }
 
     public int getScore() {
@@ -68,6 +78,9 @@ public class World {
 
         // Daftar tanah utama (x, lebar): tempat peti harta boleh muncul.
         List<float[]> groundSections = new ArrayList<>();
+
+        // Daftar pijakan brick melayang: tempat peti harta di atas brick.
+        List<RectF> brickPlatforms = new ArrayList<>();
 
         float end = 14;
 
@@ -159,6 +172,7 @@ public class World {
                 );
 
                 platforms.add(floatingPlatform);
+                brickPlatforms.add(floatingPlatform);
 
                 int coinCount =
                         platformWidth >= 3f ? 3 : 2;
@@ -252,7 +266,7 @@ public class World {
         }
 
         // Peti harta: jarang muncul.
-        maybeSpawnTreasure(groundSections, u);
+        maybeSpawnTreasure(groundSections, brickPlatforms, u);
 
         buildFinish(
                 end,
@@ -372,40 +386,156 @@ public class World {
         }
     }
 
-    // Peti harta diletakkan di tanah utama (bukan area awal, bukan pijakan kecil)
-    // dan dijaga supaya tidak menumpuk dengan koin.
-    private void maybeSpawnTreasure(List<float[]> sections, float u) {
-        if (sections.isEmpty() || random.nextFloat() >= TREASURE_CHANCE) {
+    // Peti harta: jarang muncul, dan posisinya bervariasi
+    // (di tanah, di atas brick, atau melayang). Jenis posisi yang sama
+    // dengan peti sebelumnya dihindari supaya tidak monoton.
+    private void maybeSpawnTreasure(
+            List<float[]> sections,
+            List<RectF> bricks,
+            float u
+    ) {
+        if (treasureCooldown > 0) {
+            treasureCooldown--;
             return;
         }
 
-        float[] section = sections.get(random.nextInt(sections.size()));
-        float sectionX = section[0];
-        float sectionWidth = section[1];
+        if (random.nextFloat() >= TREASURE_CHANCE) {
+            return;
+        }
 
-        for (int attempt = 0; attempt < 25; attempt++) {
-            float x = sectionX + rand(1.5f, sectionWidth - 2.7f);
+        List<Integer> kinds = new ArrayList<>();
 
-            Treasure treasure = new Treasure(x, u);
+        if (!sections.isEmpty()) {
+            kinds.add(Treasure.PLACE_GROUND);
+            kinds.add(Treasure.PLACE_AIR);
+        }
 
-            // Beri jarak kecil dari koin di sekitarnya.
-            RectF area = new RectF(treasure.rect);
-            area.inset(-0.3f * u, 0);
+        if (!bricks.isEmpty()) {
+            kinds.add(Treasure.PLACE_BRICK);
+        }
 
-            boolean overlapsCoin = false;
+        if (kinds.size() > 1) {
+            kinds.remove(Integer.valueOf(lastTreasurePlace));
+        }
 
-            for (RectF coin : coins) {
-                if (RectF.intersects(area, coin)) {
-                    overlapsCoin = true;
-                    break;
-                }
-            }
+        while (!kinds.isEmpty()) {
+            int kind = kinds.remove(random.nextInt(kinds.size()));
 
-            if (!overlapsCoin) {
+            Treasure treasure = tryPlaceTreasure(kind, sections, bricks, u);
+
+            if (treasure != null) {
                 treasures.add(treasure);
+
+                lastTreasurePlace = kind;
+                treasureCooldown = TREASURE_COOLDOWN_LEVELS;
+
                 return;
             }
         }
+    }
+
+    // Mencari posisi bebas untuk satu jenis penempatan. Null kalau tidak ketemu.
+    private Treasure tryPlaceTreasure(
+            int kind,
+            List<float[]> sections,
+            List<RectF> bricks,
+            float u
+    ) {
+        for (int attempt = 0; attempt < 25; attempt++) {
+            RectF rect;
+
+            if (kind == Treasure.PLACE_BRICK) {
+                RectF brick = bricks.get(random.nextInt(bricks.size()));
+
+                // Pijakan yang sudah dijaga musuh dilewati.
+                if (brickHasEnemy(brick, u)) {
+                    continue;
+                }
+
+                float left = rand(
+                        brick.left + 0.2f * u,
+                        brick.right - 1.4f * u
+                );
+
+                rect = new RectF(left, brick.top - u, left + 1.2f * u, brick.top);
+
+                // Koin di pijakan itu yang menghalangi peti dihapus.
+                RectF clear = new RectF(rect);
+                clear.inset(-0.2f * u, -0.2f * u);
+
+                for (int i = coins.size() - 1; i >= 0; i--) {
+                    if (RectF.intersects(clear, coins.get(i))) {
+                        coins.remove(i);
+                    }
+                }
+
+                return new Treasure(rect, kind);
+            }
+
+            float[] section = sections.get(random.nextInt(sections.size()));
+            float x = section[0] + rand(1.5f, section[1] - 2.7f);
+
+            // Tanah: dasar peti di permukaan tanah (9). Udara: melayang di atas tanah,
+            // masih terjangkau dengan satu lompatan.
+            float bottom = kind == Treasure.PLACE_GROUND
+                    ? 9f
+                    : rand(6.9f, 7.5f);
+
+            rect = new RectF(
+                    x * u,
+                    (bottom - 1f) * u,
+                    (x + 1.2f) * u,
+                    bottom * u
+            );
+
+            if (isTreasureSpotFree(rect, kind, u)) {
+                return new Treasure(rect, kind);
+            }
+        }
+
+        return null;
+    }
+
+    // Peti di tanah / udara tidak boleh menumpuk dengan koin,
+    // dan peti di udara tidak boleh terlalu dekat dengan pijakan melayang.
+    private boolean isTreasureSpotFree(RectF rect, int kind, float u) {
+        RectF area = new RectF(rect);
+        area.inset(-0.3f * u, -0.2f * u);
+
+        for (RectF coin : coins) {
+            if (RectF.intersects(area, coin)) {
+                return false;
+            }
+        }
+
+        if (kind == Treasure.PLACE_AIR) {
+            RectF air = new RectF(rect);
+            air.inset(-0.8f * u, -0.8f * u);
+
+            for (RectF platform : platforms) {
+                if (RectF.intersects(air, platform)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    // Apakah ada musuh yang berpatroli di atas pijakan brick ini?
+    private boolean brickHasEnemy(RectF brick, float u) {
+        for (Enemy enemy : enemies) {
+            boolean sameX = enemy.rect.right > brick.left
+                    && enemy.rect.left < brick.right;
+
+            boolean onTop = Math.abs(enemy.rect.bottom - brick.top) < 0.5f * u;
+
+            if (sameX && onTop) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // Peti yang baru disentuh pemain dibuka. Mengembalikan peti itu (atau null).
