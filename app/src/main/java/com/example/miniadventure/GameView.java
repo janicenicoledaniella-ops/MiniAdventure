@@ -39,7 +39,7 @@ public class GameView extends SurfaceView implements Runnable {
 
     private final Player player = new Player();
     private final World world = new World();
-
+    private final Rain rain = new Rain();
     private final SharedPreferences preferences;
 
     private final Assets assets;
@@ -130,6 +130,7 @@ public class GameView extends SurfaceView implements Runnable {
     // Permainan baru: skor, nyawa, dan putaran direset.
     private void startNewGame() {
         world.resetScore();
+        rain.reset();
 
         lives = 3;
         round = 1;
@@ -157,6 +158,7 @@ public class GameView extends SurfaceView implements Runnable {
 
     private void resetPlayer() {
         clearInput();
+        world.clearRocks();
 
         player.reset(u);
         player.setSpeedMultiplier(1f + playerSpeedBonus);
@@ -261,6 +263,7 @@ public class GameView extends SurfaceView implements Runnable {
                     loadingScreen.release();
 
                     menu.layout(sw, sh, u);
+                    rain.layout(sw, sh, u);
                     state = SELECT_CHARACTER;
                     levelBuilt = true;
                     Log.d(TAG, "menu siap");
@@ -318,7 +321,9 @@ public class GameView extends SurfaceView implements Runnable {
                     }
                 }
             }
-
+            if (state != SELECT_CHARACTER) {
+                rain.update(dt);
+            }
             draw();
         }
     }
@@ -433,6 +438,7 @@ public class GameView extends SurfaceView implements Runnable {
         }
 
         world.updateEnemies(dt, u);
+        world.updateRocks(dt, u, camX, sw);
 
         // Injak dari atas: musuh hilang dan pemain memantul.
         Enemy stomped = world.stompEnemy(
@@ -456,7 +462,10 @@ public class GameView extends SurfaceView implements Runnable {
             loseLife(false);  // false = kena musuh
             return true;
         }
-
+        if (world.hitsRock(p, u)) {
+            loseLife(false);
+            return true;
+        }
         // Bendera langsung memulai putaran berikutnya.
         if (RectF.intersects(p, world.goal)) {
             nextRound();
@@ -596,7 +605,10 @@ public class GameView extends SurfaceView implements Runnable {
             for (Enemy enemy : world.enemies) {
                 assets.drawEnemy(c, enemy);
             }
-
+            //Batu
+            for (Rock rock : world.rocks) {
+                assets.drawRock(c, rock);
+            }
             // Bendera.
             if (assets.flagBmp != null) {
                 float flagHeight = 2.5f * u;
@@ -628,6 +640,8 @@ public class GameView extends SurfaceView implements Runnable {
             assets.drawPlayer(c, player);
 
             c.restore();
+
+            rain.draw(c, camX, world.platforms);
 
             drawHud(c);
             drawControls(c);

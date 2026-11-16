@@ -12,6 +12,7 @@ public class World {
     public final List<RectF> coins = new ArrayList<>();
     public final List<Enemy> enemies = new ArrayList<>();
     public final List<Treasure> treasures = new ArrayList<>();
+    public final List<Rock> rocks = new ArrayList<>(); // batu rintangan
 
     public RectF goal;
 
@@ -23,6 +24,13 @@ public class World {
     // Makin kecil peluang / makin besar cooldown, makin jarang muncul.
     private static final float TREASURE_CHANCE = 0.20f;
     private static final int TREASURE_COOLDOWN_LEVELS = 2;
+
+    // Batu rintangan: mulai muncul dari level ROCK_MIN_ROUND, munculnya acak.
+    private static final int ROCK_MIN_ROUND = 4;
+    private static final float ROCK_CHANCE = 0.75f;   // peluang batu muncul tiap giliran
+    private float rockTimer;
+    private int currentRound = 1;
+    private float finishStartPx;
 
     private int treasureCooldown;
     private int lastTreasurePlace = -1;
@@ -54,9 +62,12 @@ public class World {
         coins.clear();
         enemies.clear();
         treasures.clear();
+        rocks.clear();
+        rockTimer = rand(4f, 7f);
 
         // Skor tetap berlanjut antarputaran.
         round = Math.max(1, round);
+        currentRound = round;
 
         float difficulty = Math.min(
                 1f,
@@ -285,6 +296,8 @@ public class World {
         float finishX =
                 previousEnd + rand(1.3f, maxGap);
 
+        finishStartPx = finishX * u; // batu tidak muncul di area finis
+
         // Tanah di bawah platform finis tetap tersedia
         // agar pemain bisa mencoba melompat kembali.
         addGround(finishX, 20, u);
@@ -375,6 +388,144 @@ public class World {
         for (Enemy enemy : enemies) {
             enemy.update(dt, u);
         }
+    }
+
+    // Hapus semua batu (dipanggil saat pemain mulai lagi setelah kehilangan nyawa).
+    public void clearRocks() {
+        rocks.clear();
+        rockTimer = rand(3f, 6f);
+    }
+
+    // Atur kapan batu muncul dan gerakkan semua batu.
+    public void updateRocks(float dt, float u, float camX, int sw) {
+        if (currentRound < ROCK_MIN_ROUND) {
+            return;
+        }
+
+        rockTimer -= dt;
+
+        if (rockTimer <= 0f) {
+            // Makin tinggi level, jedanya makin pendek (maksimal 40% lebih cepat).
+            float pace = Math.max(0.6f, 1f - (currentRound - ROCK_MIN_ROUND) * 0.06f);
+
+            rockTimer = rand(3.5f, 7.5f) * pace;
+
+            int maxRocks = currentRound >= 7 ? 3 : 2;
+
+            if (rocks.size() < maxRocks && random.nextFloat() < ROCK_CHANCE) {
+                spawnRock(u, camX, sw);
+            }
+        }
+
+        for (int i = rocks.size() - 1; i >= 0; i--) {
+            Rock rock = rocks.get(i);
+
+            rock.update(dt, u, platforms);
+
+            // Hapus batu yang jatuh ke jurang atau sudah jauh di belakang layar.
+            if (rock.rect.top > 14f * u || rock.rect.right < camX - 3f * u) {
+                rocks.remove(i);
+            }
+        }
+    }
+
+    public boolean hitsRock(RectF playerRect, float u) {
+        for (Rock rock : rocks) {
+            if (RectF.intersects(playerRect, rock.getHitbox(u))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private float rockSpeed(float u) {
+        float boost = 1f + Math.min(0.5f, (currentRound - ROCK_MIN_ROUND) * 0.05f);
+
+        return rand(3.2f, 4.6f) * boost * u;
+    }
+
+    // Jenis batu diacak: menggelinding dari brick (jatuh ke tanah) atau langsung di tanah.
+    private void spawnRock(float u, float camX, int sw) {
+        if (random.nextFloat() < 0.6f && spawnBrickRock(u, camX, sw)) {
+            return;
+        }
+
+        spawnGroundRock(u, camX + sw);
+    }
+
+    private boolean rockTooClose(float x, float u) {
+        for (Rock rock : rocks) {
+            if (Math.abs(rock.rect.left - x) < 7f * u) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Batu mulai di ujung kanan sebuah brick, menggelinding ke kiri lalu jatuh ke tanah.
+    private boolean spawnBrickRock(float u, float camX, int sw) {
+        float viewRight = camX + sw;
+        List<RectF> candidates = new ArrayList<>();
+
+        for (RectF platform : platforms) {
+            boolean isBrick = platform.height() < 1.5f * u && platform.top < 8.5f * u;
+
+            // Brick di 30% layar sebelah kanan (atau tepat di luarnya), supaya batu
+            // tidak muncul terlalu dekat dengan pemain. Bukan area finis dan tidak dijaga musuh.
+            boolean nearView = platform.right > camX + sw * 0.7f
+                    && platform.right < viewRight + 12f * u;
+
+            if (isBrick
+                    && nearView
+                    && platform.left < finishStartPx
+                    && !brickHasEnemy(platform, u)
+                    && !rockTooClose(platform.right - Rock.SIZE * u, u)) {
+                candidates.add(platform);
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            return false;
+        }
+
+        RectF brick = candidates.get(random.nextInt(candidates.size()));
+        float left = brick.right - (Rock.SIZE + 0.1f) * u;
+
+        rocks.add(new Rock(left, brick.top, rockSpeed(u), u));
+
+        return true;
+    }
+
+    // Batu mulai di luar layar sebelah kanan, di atas tanah.
+    private void spawnGroundRock(float u, float viewRight) {
+        List<float[]> spots = new ArrayList<>();
+
+        for (RectF platform : platforms) {
+            boolean isGround = platform.height() > 1.5f * u
+                    && Math.abs(platform.top - 9f * u) < 0.1f;
+
+            if (!isGround) {
+                continue;
+            }
+
+            float x = Math.max(viewRight + 1.5f * u, platform.left + 0.5f * u);
+
+            if (x + Rock.SIZE * u < platform.right - 0.5f * u
+                    && x < finishStartPx + 10f * u
+                    && !rockTooClose(x, u)) {
+                spots.add(new float[]{x, platform.top});
+            }
+        }
+
+        if (spots.isEmpty()) {
+            return;
+        }
+
+        float[] spot = spots.get(random.nextInt(spots.size()));
+
+        rocks.add(new Rock(spot[0], spot[1], rockSpeed(u), u));
     }
 
     public void collectCoins(RectF playerRect) {

@@ -25,6 +25,7 @@ public class Assets {
     public Bitmap flagBmp;
 
     public Bitmap enemyBmp;
+    private Bitmap rockBmp;
     public Bitmap leftArrowBmp;
     public Bitmap rightArrowBmp;
     public Bitmap jumpArrowBmp;
@@ -196,6 +197,21 @@ public class Assets {
                 context.getResources(),
                 R.drawable.enemy
         );
+        Bitmap rawRock = BitmapFactory.decodeResource(
+                context.getResources(),
+                R.drawable.batu
+        );
+
+        if (rawRock != null) {
+            int rockW = Math.round(u * Rock.DRAW_W);
+            int rockH = Math.round(rockW * (float) rawRock.getHeight() / rawRock.getWidth());
+
+            rockBmp = Bitmap.createScaledBitmap(rawRock, rockW, rockH, true);
+
+            if (rockBmp != rawRock) {
+                rawRock.recycle();
+            }
+        }
 
         treasureClosedBmp = decodeTreasure(R.drawable.treasure_closed);
         treasureHeartBmp = decodeTreasure(R.drawable.treasure_heart);
@@ -798,6 +814,29 @@ public class Assets {
         treasurePaint.setAlpha(Math.max(0, Math.min(255, alpha)));
         c.drawBitmap(bmp, null, dst, treasurePaint);
         treasurePaint.setAlpha(255);
+    }
+    public void drawRock(Canvas c, Rock rock) {
+        if (rockBmp == null) {
+            paint.setColor(Color.GRAY);
+            c.drawRect(rock.rect, paint);
+            paint.setColor(Color.WHITE);
+            return;
+        }
+
+        float cx = rock.rect.centerX();
+        float cy = rock.rect.centerY();
+
+        paint.setColor(Color.WHITE);
+
+        c.save();
+        c.rotate(rock.angle, cx, cy);
+        c.drawBitmap(
+                rockBmp,
+                cx - rockBmp.getWidth() / 2f,
+                cy - rockBmp.getHeight() / 2f,
+                paint
+        );
+        c.restore();
     }
 
     public void drawEnemy(Canvas c, Enemy e) {
