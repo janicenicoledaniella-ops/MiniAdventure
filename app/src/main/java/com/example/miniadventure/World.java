@@ -18,12 +18,13 @@ public class World {
 
     private final Random random = new Random();
 
-    // Peti harta dibuat jarang muncul:
-    // - TREASURE_CHANCE: peluang muncul di sebuah level (0..1), maksimal 1 peti per level.
-    // - TREASURE_COOLDOWN_LEVELS: setelah ada peti, sekian level berikutnya pasti tanpa peti.
-    // Makin kecil peluang / makin besar cooldown, makin jarang muncul.
-    private static final float TREASURE_CHANCE = 0.20f;
-    private static final int TREASURE_COOLDOWN_LEVELS = 2;
+    // Peti harta muncul terjadwal berdasarkan nomor level:
+    // - Peti pertama selalu di level TREASURE_FIRST_LEVEL (level 3).
+    // - Setelah itu jaraknya acak TREASURE_GAP_MIN..TREASURE_GAP_MAX level (2, 3, atau 4).
+    //   Contoh: level 3 -> 5/6/7 -> dst.
+    private static final int TREASURE_FIRST_LEVEL = 3;
+    private static final int TREASURE_GAP_MIN = 2;
+    private static final int TREASURE_GAP_MAX = 4;
 
     // Batu rintangan: mulai muncul dari level ROCK_MIN_ROUND, munculnya acak.
     private static final int ROCK_MIN_ROUND = 4;
@@ -32,7 +33,8 @@ public class World {
     private int currentRound = 1;
     private float finishStartPx;
 
-    private int treasureCooldown;
+    private int nextTreasureLevel = TREASURE_FIRST_LEVEL; // level berikutnya yang dapat peti
+    private int currentTreasureLevel = -1;                // level terakhir yang sudah diberi peti
     private int lastTreasurePlace = -1;
 
     private int score;
@@ -40,8 +42,9 @@ public class World {
     public void resetScore() {
         score = 0;
 
-        // Permainan baru: hitungan jarak antarpeti ikut diulang.
-        treasureCooldown = 0;
+        // Permainan baru: jadwal peti kembali ke level 3.
+        nextTreasureLevel = TREASURE_FIRST_LEVEL;
+        currentTreasureLevel = -1;
         lastTreasurePlace = -1;
     }
 
@@ -276,8 +279,8 @@ public class World {
             end = x + width;
         }
 
-        // Peti harta: jarang muncul.
-        maybeSpawnTreasure(groundSections, brickPlatforms, u);
+        // Peti harta: muncul sesuai jadwal level.
+        maybeSpawnTreasure(groundSections, brickPlatforms, u, round);
 
         buildFinish(
                 end,
@@ -537,20 +540,20 @@ public class World {
         }
     }
 
-    // Peti harta: jarang muncul, dan posisinya bervariasi
+    // Peti harta: muncul sesuai jadwal level, dan posisinya bervariasi
     // (di tanah, di atas brick, atau melayang). Jenis posisi yang sama
     // dengan peti sebelumnya dihindari supaya tidak monoton.
     private void maybeSpawnTreasure(
             List<float[]> sections,
             List<RectF> bricks,
-            float u
+            float u,
+            int round
     ) {
-        if (treasureCooldown > 0) {
-            treasureCooldown--;
-            return;
-        }
+        // Level yang sama dibangun ulang: peti tetap muncul,
+        // jadwal berikutnya tidak diubah lagi.
+        boolean sameLevelAgain = round == currentTreasureLevel;
 
-        if (random.nextFloat() >= TREASURE_CHANCE) {
+        if (!sameLevelAgain && round < nextTreasureLevel) {
             return;
         }
 
@@ -578,7 +581,14 @@ public class World {
                 treasures.add(treasure);
 
                 lastTreasurePlace = kind;
-                treasureCooldown = TREASURE_COOLDOWN_LEVELS;
+
+                if (!sameLevelAgain) {
+                    currentTreasureLevel = round;
+
+                    // Jarak ke peti berikutnya acak: 2, 3, atau 4 level.
+                    nextTreasureLevel = round + TREASURE_GAP_MIN
+                            + random.nextInt(TREASURE_GAP_MAX - TREASURE_GAP_MIN + 1);
+                }
 
                 return;
             }
