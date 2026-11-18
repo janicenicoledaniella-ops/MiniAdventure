@@ -48,6 +48,8 @@ public class Assets {
     private Bitmap treasureHeartBmp;
     private Bitmap treasureSpeedBmp;
     private Bitmap treasureCoinBmp;
+    private Bitmap treasureFlashlightBmp;
+    private Bitmap flashlightBmp;
     private final Paint treasurePaint =
             new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
 
@@ -217,7 +219,8 @@ public class Assets {
         treasureHeartBmp = decodeTreasure(R.drawable.treasure_heart);
         treasureSpeedBmp = decodeTreasure(R.drawable.treasure_speed);
         treasureCoinBmp = decodeTreasure(R.drawable.treasure_coin);
-
+        treasureFlashlightBmp = decodeTreasure(R.drawable.treasure_flashlight);
+        flashlightBmp = decodeTreasure(R.drawable.senter);
         loadCharacters(u);
 
         Bitmap rawFlag = BitmapFactory.decodeResource(
@@ -286,6 +289,8 @@ public class Assets {
                 return treasureSpeedBmp;
             case Treasure.COIN:
                 return treasureCoinBmp;
+            case Treasure.FLASHLIGHT:
+                return treasureFlashlightBmp;
             default:
                 return treasureClosedBmp;
         }
@@ -814,6 +819,29 @@ public class Assets {
         treasurePaint.setAlpha(Math.max(0, Math.min(255, alpha)));
         c.drawBitmap(bmp, null, dst, treasurePaint);
         treasurePaint.setAlpha(255);
+    }
+    // Gambar senter polos di tengah kotak, proporsional (untuk HUD).
+    public void drawFlashlightIcon(Canvas c, RectF box) {
+        if (flashlightBmp == null) {
+            return;
+        }
+
+        float k = Math.min(
+                box.width() / flashlightBmp.getWidth(),
+                box.height() / flashlightBmp.getHeight()
+        );
+
+        float w = flashlightBmp.getWidth() * k;
+        float h = flashlightBmp.getHeight() * k;
+
+        RectF dst = new RectF(
+                box.centerX() - w / 2f,
+                box.centerY() - h / 2f,
+                box.centerX() + w / 2f,
+                box.centerY() + h / 2f
+        );
+
+        c.drawBitmap(flashlightBmp, null, dst, treasurePaint);
     }
     public void drawRock(Canvas c, Rock rock) {
         if (rockBmp == null) {

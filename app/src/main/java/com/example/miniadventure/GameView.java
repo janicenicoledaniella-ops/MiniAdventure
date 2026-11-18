@@ -80,6 +80,8 @@ public class GameView extends SurfaceView implements Runnable {
 
     private final java.util.Random treasureRandom = new java.util.Random();
     private float playerSpeedBonus;
+    private boolean hasFlashlight;
+    private Bitmap flashlightBmp;
     private int toastType = -1;
     private long toastStartNs;
     private String toastMain = "";
@@ -131,7 +133,7 @@ public class GameView extends SurfaceView implements Runnable {
     private void startNewGame() {
         world.resetScore();
         rain.reset();
-
+        hasFlashlight = false;
         lives = 3;
         round = 1;
         speedMultiplier = 1f;
@@ -151,6 +153,7 @@ public class GameView extends SurfaceView implements Runnable {
     private void buildRound() {
         // World membuat susunan baru berdasarkan nomor putaran.
         // Kecepatan musuh juga diatur oleh World.
+        world.setFlashlightChestWanted(rain.wantsFlashlight() && !hasFlashlight);
         world.buildLevel(u, round);
 
         resetPlayer();
@@ -322,7 +325,11 @@ public class GameView extends SurfaceView implements Runnable {
                 }
             }
             if (state != SELECT_CHARACTER) {
-                rain.update(dt);
+                rain.update(dt, hasFlashlight); // atur cuaca dan cahaya senter
+
+                if (rain.consumeDarkFogEnded()) {
+                    hasFlashlight = false; // kabut gelap reda, senter hilang
+                }
             }
             draw();
         }
@@ -480,6 +487,21 @@ public class GameView extends SurfaceView implements Runnable {
     // Hadiah peti diacak. Heart dilewati kalau nyawa sudah penuh,
     // speed dilewati kalau bonus kecepatan sudah maksimal, supaya tidak ada hadiah yang sia-sia.
     private void giveTreasureReward(Treasure treasure) {
+        if (treasure.reward == Treasure.FLASHLIGHT
+                && !hasFlashlight
+                && rain.wantsFlashlight()) {
+            hasFlashlight = true;
+
+            treasure.type = Treasure.FLASHLIGHT;
+
+            toastMain = "SENTER";
+            toastSub = "Lihat lebih jelas saat kabut gelap";
+            toastType = Treasure.FLASHLIGHT;
+            toastStartNs = System.nanoTime();
+
+            sounds.playCoin();
+            return;
+        }
         int[] pool = new int[3];
         int count = 0;
 
@@ -641,7 +663,8 @@ public class GameView extends SurfaceView implements Runnable {
 
             c.restore();
 
-            rain.draw(c, camX, world.platforms);
+            RectF playerBox = player.getHitbox(u); // pusat lingkaran pandang saat kabut gelap
+            rain.draw(c, camX, world.platforms, playerBox.centerX() - camX, playerBox.centerY());
 
             drawHud(c);
             drawControls(c);
@@ -705,6 +728,49 @@ public class GameView extends SurfaceView implements Runnable {
 
         // Badge level di sebelah kanan hati.
         drawLevelBadge(c);
+        if (hasFlashlight) {
+            drawFlashlightBadge(c);
+        }
+    }
+    // Lencana kecil di HUD selama senter aktif.
+    private void drawFlashlightBadge(Canvas c) {
+        float x = u * 8.1f;
+        float y = u * 0.15f;
+        float w = u * 2.6f;
+        float h = u * 0.85f;
+
+        RectF badge = new RectF(x, y, x + w, y + h);
+
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.rgb(139, 90, 43));
+        c.drawRoundRect(badge, u * 0.18f, u * 0.18f, paint);
+
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(u * 0.045f);
+        paint.setColor(Color.rgb(85, 50, 25));
+        c.drawRoundRect(badge, u * 0.18f, u * 0.18f, paint);
+
+        paint.setStyle(Paint.Style.FILL);
+
+        float iconSize = u * 0.75f;
+
+        RectF iconRect = new RectF(
+                x + u * 0.08f,
+                y + (h - iconSize) / 2f,
+                x + u * 0.08f + iconSize,
+                y + (h + iconSize) / 2f
+        );
+
+        assets.drawFlashlightIcon(c, iconRect); // senter polos, lebih jelas di HUD
+
+        paint.setColor(Color.WHITE);
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTextSize(u * 0.30f);
+        paint.setTypeface(Typeface.DEFAULT_BOLD);
+
+        c.drawText("SENTER", x + u * 1.65f, badge.centerY() + u * 0.11f, paint);
+
+        paint.setTextAlign(Paint.Align.LEFT);
     }
 
     private void drawLevelBadge(Canvas c) {

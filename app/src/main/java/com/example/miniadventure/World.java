@@ -36,6 +36,7 @@ public class World {
     private int nextTreasureLevel = TREASURE_FIRST_LEVEL; // level berikutnya yang dapat peti
     private int currentTreasureLevel = -1;                // level terakhir yang sudah diberi peti
     private int lastTreasurePlace = -1;
+    private boolean flashlightChestWanted; // peti senter dijamin ada di level ini
 
     private int score;
 
@@ -281,6 +282,7 @@ public class World {
 
         // Peti harta: muncul sesuai jadwal level.
         maybeSpawnTreasure(groundSections, brickPlatforms, u, round);
+        ensureFlashlightChest(groundSections, brickPlatforms, u); // peti senter untuk kabut gelap
 
         buildFinish(
                 end,
@@ -529,6 +531,52 @@ public class World {
         float[] spot = spots.get(random.nextInt(spots.size()));
 
         rocks.add(new Rock(spot[0], spot[1], rockSpeed(u), u));
+    }
+
+    // Diatur GameView sebelum level dibuat: true kalau kabut gelap sedang atau akan turun.
+    public void setFlashlightChestWanted(boolean wanted) {
+        flashlightChestWanted = wanted;
+    }
+
+    // Kalau kabut gelap akan turun, level ini pasti punya satu peti berisi senter.
+    private void ensureFlashlightChest(
+            List<float[]> sections,
+            List<RectF> bricks,
+            float u
+    ) {
+        if (!flashlightChestWanted) {
+            return;
+        }
+
+        // Sudah ada peti biasa di level ini: jadikan peti senter.
+        if (!treasures.isEmpty()) {
+            treasures.get(0).reward = Treasure.FLASHLIGHT;
+            return;
+        }
+
+        List<Integer> kinds = new ArrayList<>();
+
+        if (!sections.isEmpty()) {
+            kinds.add(Treasure.PLACE_GROUND);
+            kinds.add(Treasure.PLACE_AIR);
+        }
+
+        if (!bricks.isEmpty()) {
+            kinds.add(Treasure.PLACE_BRICK);
+        }
+
+        while (!kinds.isEmpty()) {
+            int kind = kinds.remove(random.nextInt(kinds.size()));
+
+            Treasure treasure = tryPlaceTreasure(kind, sections, bricks, u);
+
+            if (treasure != null) {
+                treasure.reward = Treasure.FLASHLIGHT;
+                treasures.add(treasure);
+
+                return;
+            }
+        }
     }
 
     public void collectCoins(RectF playerRect) {
