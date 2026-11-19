@@ -427,8 +427,8 @@ public class World {
 
             rock.update(dt, u, platforms);
 
-            // Hapus batu yang jatuh ke jurang atau sudah jauh di belakang layar.
-            if (rock.rect.top > 14f * u || rock.rect.right < camX - 3f * u) {
+            // Hapus batu yang jatuh ke jurang, sudah jauh di belakang layar, atau tersangkut.
+            if (rock.rect.top > 14f * u || rock.rect.right < camX - 3f * u || rock.isStuck()) {
                 rocks.remove(i);
             }
         }
@@ -518,7 +518,7 @@ public class World {
             float x = Math.max(viewRight + 1.5f * u, platform.left + 0.5f * u);
 
             if (x + Rock.SIZE * u < platform.right - 0.5f * u
-                    && x < finishStartPx + 10f * u
+                    && x < finishStartPx + 2f * u
                     && !rockTooClose(x, u)) {
                 spots.add(new float[]{x, platform.top});
             }

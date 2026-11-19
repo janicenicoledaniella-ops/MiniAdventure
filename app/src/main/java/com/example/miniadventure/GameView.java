@@ -81,6 +81,7 @@ public class GameView extends SurfaceView implements Runnable {
     private final java.util.Random treasureRandom = new java.util.Random();
     private float playerSpeedBonus;
     private boolean hasFlashlight;
+    private int playerFacing = 1;  // arah hadap pemain: 1 kanan, -1 kiri
     private Bitmap flashlightBmp;
     private int toastType = -1;
     private long toastStartNs;
@@ -162,6 +163,7 @@ public class GameView extends SurfaceView implements Runnable {
     private void resetPlayer() {
         clearInput();
         world.clearRocks();
+        playerFacing = 1;
 
         player.reset(u);
         player.setSpeedMultiplier(1f + playerSpeedBonus);
@@ -325,11 +327,14 @@ public class GameView extends SurfaceView implements Runnable {
                 }
             }
             if (state != SELECT_CHARACTER) {
-                rain.update(dt, hasFlashlight); // atur cuaca dan cahaya senter
+                rain.update(dt, hasFlashlight, playerFacing); // atur cuaca, senter, dan arah sorotan
+                sounds.setRainVolume(rain.getIntensity()); // suara hujan mengikuti kekuatan hujan
 
                 if (rain.consumeDarkFogEnded()) {
                     hasFlashlight = false; // kabut gelap reda, senter hilang
                 }
+            } else {
+                sounds.setRainVolume(0f); // di menu pilih karakter tidak ada suara hujan
             }
             draw();
         }
@@ -399,6 +404,9 @@ public class GameView extends SurfaceView implements Runnable {
         }
 
         player.setDirection(direction);
+        if (direction != 0) {
+            playerFacing = direction; // arah sorotan senter mengikuti arah hadap pemain
+        }
 
         if (jump) {
             // Suara lompat hanya bila lompat benar-benar terjadi (pemain di tanah).

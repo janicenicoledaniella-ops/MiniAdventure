@@ -21,6 +21,8 @@ public class Rock {
     public float angle;
     public boolean onGround;
 
+    private float stuckTime; // lama batu hampir tidak bergerak maju
+
     public Rock(float left, float bottom, float speed, float u) {
         float size = SIZE * u;
 
@@ -28,7 +30,13 @@ public class Rock {
         vx = -Math.abs(speed);
     }
 
+    // True kalau batu tersangkut (tidak maju cukup lama). World akan menghapusnya.
+    public boolean isStuck() {
+        return stuckTime > 0.7f;
+    }
+
     public void update(float dt, float u, List<RectF> platforms) {
+        float startLeft = rect.left;
         float prevLeft = rect.left;
         float prevBottom = rect.bottom;
 
@@ -36,7 +44,13 @@ public class Rock {
         rect.offset(vx * dt, 0);
 
         // Batu tidak menembus sisi tanah saat jatuh ke jurang.
+        // Hanya tanah tebal yang menghalangi. Brick dan anak tangga finis tipis, jadi dilewati
+        // supaya batu tidak nyangkut di sisinya.
         for (RectF platform : platforms) {
+            if (platform.height() <= 1.5f * u) {
+                continue;
+            }
+
             boolean sameHeight = rect.bottom > platform.top + 0.15f * u
                     && rect.top < platform.bottom;
 
@@ -69,6 +83,13 @@ public class Rock {
                 vy = 0;
                 onGround = true;
             }
+        }
+
+        // Hitung lama batu tidak maju (tersangkut).
+        if (Math.abs(rect.left - startLeft) < Math.abs(vx) * dt * 0.3f) {
+            stuckTime += dt;
+        } else {
+            stuckTime = 0f;
         }
 
         // Putaran mengikuti jarak tempuh (ke kiri = berputar berlawanan arah jarum jam).

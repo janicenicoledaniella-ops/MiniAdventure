@@ -36,6 +36,7 @@ public class SoundManager {
     private static final float FALL_VOLUME = 0.9f;
     private static final float FALL_FINAL_VOLUME = 1.0f;
     private static final float ENEMY_DIE_VOLUME = 1.0f;
+    private static final float RAIN_VOLUME = 0.6f; // suara hujan paling keras (0.0 sampai 1.0)
 
     // Kecepatan putar suara jatuh (0.5 sampai 2.0). 1.0 = normal.
     // Makin besar = makin cepat & pendek. Naikkan kalau masih terasa lambat.
@@ -62,6 +63,8 @@ public class SoundManager {
             Collections.synchronizedSet(new HashSet<Integer>());
 
     private volatile MediaPlayer music;
+    private MediaPlayer rainSound; // suara hujan, diulang terus
+    private float rainLevel;       // 0..1, mengikuti kekuatan hujan
     private boolean musicWanted;   // musik seharusnya berbunyi (sedang bermain)
     private boolean paused;        // aplikasi di latar belakang
     private boolean released;      // SoundManager sudah dilepas
@@ -84,6 +87,7 @@ public class SoundManager {
     private void init() {
         initSoundPool();
         initMusic();
+        initRain();
     }
 
     private void initSoundPool() {
@@ -189,6 +193,44 @@ public class SoundManager {
         }
     }
 
+    private void initRain() {
+        MediaPlayer mp = null;
+
+        try {
+            mp = MediaPlayer.create(context, R.raw.hujan);
+
+            if (mp == null) {
+                report("Suara hujan gagal dimuat (MediaPlayer.create mengembalikan null)");
+                return;
+            }
+
+            mp.setLooping(true);
+            mp.setVolume(0f, 0f);
+        } catch (Exception e) {
+            report("Suara hujan error: " + e);
+
+            if (mp != null) {
+                try {
+                    mp.release();
+                } catch (Exception ignored) {
+                }
+            }
+            return;
+        }
+
+        synchronized (this) {
+            if (released) {
+                mp.release();
+                return;
+            }
+
+            rainSound = mp;
+
+            // Hujan sudah turun sebelum suaranya siap: langsung putar.
+            applyRainLevel();
+        }
+    }
+
     // Tulis ke Logcat dan (opsional) tampilkan Toast supaya masalahnya kelihatan.
     private void report(final String message) {
         Log.e(TAG, message);
@@ -275,6 +317,43 @@ public class SoundManager {
         play(enemyDieId, ENEMY_DIE_VOLUME);
     }
 
+    // level 0..1 = kekuatan hujan saat ini. Dipanggil GameView tiap frame,
+    // jadi suara hujan menguat dan mereda bersama hujannya.
+    public synchronized void setRainVolume(float level) {
+        level = Math.max(0f, Math.min(1f, level));
+
+        // Tidak perlu bekerja lagi kalau hampir tidak berubah.
+        if (Math.abs(level - rainLevel) < 0.01f && (level > 0f) == (rainLevel > 0f)) {
+            return;
+        }
+
+        rainLevel = level;
+        applyRainLevel();
+    }
+
+    private void applyRainLevel() {
+        if (rainSound == null) {
+            return;
+        }
+
+        try {
+            if (rainLevel <= 0.01f || paused) {
+                if (rainSound.isPlaying()) {
+                    rainSound.pause();
+                }
+                return;
+            }
+
+            float v = rainLevel * RAIN_VOLUME;
+            rainSound.setVolume(v, v);
+
+            if (!rainSound.isPlaying()) {
+                rainSound.start();
+            }
+        } catch (IllegalStateException ignored) {
+        }
+    }
+
     // Musik dimulai dari awal setiap permainan baru.
     public synchronized void startMusic() {
         musicWanted = true;
@@ -322,6 +401,7 @@ public class SoundManager {
     // Aplikasi ke latar belakang: musik berhenti sementara.
     public synchronized void onPause() {
         paused = true;
+        applyRainLevel(); // suara hujan ikut berhenti
 
         if (music == null) {
             return;
@@ -338,6 +418,7 @@ public class SoundManager {
     // Aplikasi kembali: musik lanjut kalau memang sedang bermain.
     public synchronized void onResume() {
         paused = false;
+        applyRainLevel(); // suara hujan lanjut kalau sedang hujan
 
         if (music == null || !musicWanted) {
             return;
@@ -354,6 +435,14 @@ public class SoundManager {
     public synchronized void release() {
         released = true;
         mainHandler.removeCallbacks(delayedGameOver);
+
+        if (rainSound != null) {
+            try {
+                rainSound.release();
+            } catch (Exception ignored) {
+            }
+            rainSound = null;
+        }
 
         if (music != null) {
             try {
