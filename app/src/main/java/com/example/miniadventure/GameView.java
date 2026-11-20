@@ -73,13 +73,20 @@ public class GameView extends SurfaceView implements Runnable {
 
     // ---- Treasure (peti harta) ----
     private static final int MAX_LIVES = 3;               // batas nyawa (sama dengan 3 hati di HUD)
-    private static final float SPEED_BONUS_STEP = 0.15f;  // tiap speed treasure: +15% kecepatan
-    private static final float SPEED_BONUS_MAX = 0.60f;   // batas total bonus kecepatan
+    // Speed treasure = mode dash: 5 detik tanpa jurang, musuh, dan batu; kecepatan terus naik.
+    private static final float DASH_SECONDS = 5f;        // lama mode dash
+    private static final float DASH_START_MULT = 1.5f;   // kecepatan awal dash
+    private static final float DASH_MAX_MULT = 2.5f;     // kecepatan maksimal dash
+    private static final float DASH_ACCEL = 0.2f;        // tambahan kecepatan per detik saat dash
+    private static final float DASH_GRACE_SECONDS = 1f;  // kebal sebentar setelah dash selesai
     private static final int COIN_REWARD = 100;           // koin dari coin treasure
     private static final long TOAST_NS = 2_600_000_000L;  // lama tampilan "kamu dapat ..."
 
     private final java.util.Random treasureRandom = new java.util.Random();
-    private float playerSpeedBonus;
+    private float dashTimeLeft;          // sisa detik dash (0 = tidak dash)
+    private float dashMult = DASH_START_MULT;
+    private float graceLeft;             // sisa detik kebal setelah dash
+    private boolean virtualGround;       // tanah lurus pengganti jurang (aktif saat dash)
     private boolean hasFlashlight;
     private int playerFacing = 1;  // arah hadap pemain: 1 kanan, -1 kiri
     private Bitmap flashlightBmp;
@@ -138,7 +145,6 @@ public class GameView extends SurfaceView implements Runnable {
         lives = 3;
         round = 1;
         speedMultiplier = 1f;
-        playerSpeedBonus = 0f;
         toastType = -1;
 
         assets.setBackgroundByRound(round);
@@ -166,7 +172,13 @@ public class GameView extends SurfaceView implements Runnable {
         playerFacing = 1;
 
         player.reset(u);
-        player.setSpeedMultiplier(1f + playerSpeedBonus);
+        player.setSpeedMultiplier(1f);
+
+        // Dash selalu berhenti saat pemain diulang dari awal / ganti putaran.
+        dashTimeLeft = 0f;
+        dashMult = DASH_START_MULT;
+        graceLeft = 0f;
+        virtualGround = false;
 
         fallSoundPlayed = false;
 
@@ -307,10 +319,15 @@ public class GameView extends SurfaceView implements Runnable {
 
             if (state == PLAYING) {
                 // Langkah kecil untuk menjaga ketelitian tabrakan.
+                float stepScale = Math.max(
+                        speedMultiplier,
+                        dashTimeLeft > 0f ? dashMult : 1f
+                );
+
                 int steps = Math.max(
                         1,
                         (int) Math.ceil(
-                                dt * speedMultiplier / (1f / 120f)
+                                dt * stepScale / (1f / 120f)
                         )
                 );
 
@@ -396,6 +413,24 @@ public class GameView extends SurfaceView implements Runnable {
         int direction;
         boolean jump;
 
+        // Timer dash: kecepatan naik terus selama dash, lalu kembali normal.
+        if (dashTimeLeft > 0f) {
+            dashTimeLeft -= dt;
+            dashMult = Math.min(DASH_MAX_MULT, dashMult + DASH_ACCEL * dt);
+            player.setSpeedMultiplier(dashMult);
+
+            if (dashTimeLeft <= 0f) {
+                dashTimeLeft = 0f;
+                dashMult = DASH_START_MULT;
+                player.setSpeedMultiplier(1f);
+                graceLeft = DASH_GRACE_SECONDS;
+            }
+        } else if (graceLeft > 0f) {
+            graceLeft -= dt;
+        }
+
+        boolean dashing = dashTimeLeft > 0f;
+
         synchronized (inputLock) {
             direction = (right ? 1 : 0) - (left ? 1 : 0);
 
@@ -420,6 +455,21 @@ public class GameView extends SurfaceView implements Runnable {
         float previousBottom = player.y + player.h;
 
         player.update(dt, u, world.platforms);
+
+        // Tanah lurus pengganti jurang selama dash. Setelah dash selesai tanah ini
+        // baru hilang kalau pemain sudah berdiri di tanah/platform asli (tidak jatuh di tengah jurang).
+        if (virtualGround) {
+            float groundTop = 9f * u;
+
+            if (!dashing && player.onGround) {
+                virtualGround = false;
+            } else if (!player.onGround && player.vy >= 0f
+                    && player.y + player.h >= groundTop) {
+                player.y = groundTop - player.h - 0.001f * u;
+                player.vy = 0f;
+                player.onGround = true;
+            }
+        }
 
         RectF p = player.getHitbox(u);
 
@@ -452,11 +502,14 @@ public class GameView extends SurfaceView implements Runnable {
             giveTreasureReward(openedTreasure);
         }
 
-        world.updateEnemies(dt, u);
-        world.updateRocks(dt, u, camX, sw);
+        // Saat dash musuh dan batu "tidak ada": tidak bergerak, tidak muncul, tidak menabrak.
+        if (!dashing) {
+            world.updateEnemies(dt, u);
+            world.updateRocks(dt, u, camX, sw);
+        }
 
         // Injak dari atas: musuh hilang dan pemain memantul.
-        Enemy stomped = world.stompEnemy(
+        Enemy stomped = dashing ? null : world.stompEnemy(
                 p,
                 previousBottom,
                 p.bottom > previousBottom
@@ -473,11 +526,13 @@ public class GameView extends SurfaceView implements Runnable {
         }
 
         // Tabrak samping atau bawah: nyawa berkurang.
-        if (world.hitsEnemy(p)) {
+        boolean safe = dashing || graceLeft > 0f;
+
+        if (!safe && world.hitsEnemy(p)) {
             loseLife(false);  // false = kena musuh
             return true;
         }
-        if (world.hitsRock(p, u)) {
+        if (!safe && world.hitsRock(p, u)) {
             loseLife(false);
             return true;
         }
@@ -492,8 +547,7 @@ public class GameView extends SurfaceView implements Runnable {
         return false;
     }
 
-    // Hadiah peti diacak. Heart dilewati kalau nyawa sudah penuh,
-    // speed dilewati kalau bonus kecepatan sudah maksimal, supaya tidak ada hadiah yang sia-sia.
+    // Hadiah peti diacak. Heart dilewati kalau nyawa sudah penuh supaya tidak ada hadiah yang sia-sia.
     private void giveTreasureReward(Treasure treasure) {
         if (treasure.reward == Treasure.FLASHLIGHT
                 && !hasFlashlight
@@ -517,9 +571,7 @@ public class GameView extends SurfaceView implements Runnable {
             pool[count++] = Treasure.HEART;
         }
 
-        if (playerSpeedBonus < SPEED_BONUS_MAX - 0.001f) {
-            pool[count++] = Treasure.SPEED;
-        }
+        pool[count++] = Treasure.SPEED;
 
         pool[count++] = Treasure.COIN;
 
@@ -531,15 +583,10 @@ public class GameView extends SurfaceView implements Runnable {
             toastMain = "HEART +1";
             toastSub = "Nyawa bertambah";
         } else if (type == Treasure.SPEED) {
-            playerSpeedBonus = Math.min(
-                    SPEED_BONUS_MAX,
-                    playerSpeedBonus + SPEED_BONUS_STEP
-            );
+            startDash();
 
-            player.setSpeedMultiplier(1f + playerSpeedBonus);
-
-            toastMain = "SPEED UP!";
-            toastSub = "Kecepatan +" + Math.round(playerSpeedBonus * 100f) + "%";
+            toastMain = "SPEED BOOST!";
+            toastSub = "Tanpa rintangan selama " + Math.round(DASH_SECONDS) + " detik";
         } else {
             world.addScore(COIN_REWARD);
 
@@ -553,6 +600,20 @@ public class GameView extends SurfaceView implements Runnable {
         toastStartNs = System.nanoTime();
 
         sounds.playCoin();
+    }
+
+    // Mulai (atau perpanjang) mode dash dari speed treasure.
+    private void startDash() {
+        if (dashTimeLeft <= 0f) {
+            dashMult = DASH_START_MULT;
+            world.clearRocks();   // batu yang sudah ada hilang, tidak muncul tiba-tiba setelah dash
+        }
+
+        dashTimeLeft = DASH_SECONDS;
+        graceLeft = 0f;
+        virtualGround = true;
+
+        player.setSpeedMultiplier(dashMult);
     }
 
     private void loseLife(boolean fell) {
@@ -621,6 +682,11 @@ public class GameView extends SurfaceView implements Runnable {
                 assets.drawPlatform(c, platform, u);
             }
 
+            // Saat dash jurang tertutup tanah lurus.
+            if (virtualGround) {
+                drawDashGround(c);
+            }
+
             // Koin.
             for (RectF coin : world.coins) {
                 assets.drawCoin(c, coin);
@@ -632,12 +698,14 @@ public class GameView extends SurfaceView implements Runnable {
             }
 
             // Musuh.
-            for (Enemy enemy : world.enemies) {
-                assets.drawEnemy(c, enemy);
-            }
-            //Batu
-            for (Rock rock : world.rocks) {
-                assets.drawRock(c, rock);
+            if (dashTimeLeft <= 0f) {
+                for (Enemy enemy : world.enemies) {
+                    assets.drawEnemy(c, enemy);
+                }
+                //Batu
+                for (Rock rock : world.rocks) {
+                    assets.drawRock(c, rock);
+                }
             }
             // Bendera.
             if (assets.flagBmp != null) {
@@ -675,6 +743,7 @@ public class GameView extends SurfaceView implements Runnable {
             rain.draw(c, camX, world.platforms, playerBox.centerX() - camX, playerBox.centerY());
 
             drawHud(c);
+            drawDashBar(c);
             drawControls(c);
             drawTreasureToast(c);
 
@@ -684,6 +753,67 @@ public class GameView extends SurfaceView implements Runnable {
         } finally {
             holder.unlockCanvasAndPost(c);
         }
+    }
+
+    // Menutup semua celah jurang yang terlihat di layar dengan potongan tanah.
+    private void drawDashGround(Canvas c) {
+        float groundTop = 9f * u;
+        float viewLeft = camX - u;
+        float viewRight = camX + sw + u;
+
+        java.util.List<RectF> ground = new java.util.ArrayList<>();
+
+        for (RectF platform : world.platforms) {
+            if (Math.abs(platform.top - groundTop) < 0.01f * u
+                    && platform.height() > 1.5f * u) {
+                ground.add(platform);
+            }
+        }
+
+        java.util.Collections.sort(ground, (a, b) -> Float.compare(a.left, b.left));
+
+        float cursor = viewLeft;
+
+        for (RectF platform : ground) {
+            if (platform.left > cursor && cursor < viewRight) {
+                assets.drawPlatform(
+                        c,
+                        new RectF(cursor, groundTop, Math.min(platform.left, viewRight), 12f * u),
+                        u
+                );
+            }
+
+            cursor = Math.max(cursor, platform.right);
+        }
+    }
+
+    // Bar sisa waktu dash di tengah atas layar.
+    private void drawDashBar(Canvas c) {
+        if (dashTimeLeft <= 0f) {
+            return;
+        }
+
+        float barW = u * 4f;
+        float barH = u * 0.3f;
+        float left = (sw - barW) / 2f;
+        float top = u * 0.25f;
+
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.argb(150, 0, 0, 0));
+        c.drawRoundRect(new RectF(left, top, left + barW, top + barH),
+                barH / 2f, barH / 2f, paint);
+
+        paint.setColor(Color.rgb(255, 190, 40));
+        float fill = barW * Math.max(0f, Math.min(1f, dashTimeLeft / DASH_SECONDS));
+        c.drawRoundRect(new RectF(left, top, left + fill, top + barH),
+                barH / 2f, barH / 2f, paint);
+
+        paint.setColor(Color.WHITE);
+        paint.setTextSize(u * 0.34f);
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTypeface(Typeface.DEFAULT_BOLD);
+        c.drawText("SPEED " + String.format(java.util.Locale.US, "%.1f", dashTimeLeft) + "s",
+                sw / 2f, top + barH + u * 0.38f, paint);
     }
 
     private void drawHud(Canvas c) {

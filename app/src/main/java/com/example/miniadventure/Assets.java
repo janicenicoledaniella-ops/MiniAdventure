@@ -86,6 +86,8 @@ public class Assets {
         final float scale;          // pengali ukuran (1.0 = 1.2 kotak tinggi)
         final float runCycleUnits;  // jarak lari untuk satu putaran penuh animasi (makin besar = makin lambat)
         final float runBlend;       // porsi akhir tiap frame lari yang di-crossfade (0..1)
+        boolean useRunMids = true;  // false = abaikan file <prefix>_run<i>_mid (hasil interpolasi kurang bersih)
+        boolean crossfade = true;   // khusus lompat: false = ganti frame langsung (tidak ada efek "double")
         Bitmap[] bStand, bRun, bJump;
 
         AnimSet(String prefix, int runCount, int jumpCount,
@@ -98,6 +100,23 @@ public class Assets {
             this.runBlend = runBlend;
         }
 
+        AnimSet(String prefix, int runCount, int jumpCount,
+                float scale, float runCycleUnits, boolean crossfade) {
+            this(prefix, runCount, jumpCount, scale, runCycleUnits, 0.35f);
+            this.crossfade = crossfade;
+        }
+
+        AnimSet(String prefix, int runCount, int jumpCount,
+                float scale, float runCycleUnits, float runBlend, boolean crossfade) {
+            this(prefix, runCount, jumpCount, scale, runCycleUnits, runBlend);
+            this.crossfade = crossfade;
+        }
+
+        AnimSet noRunMids() {
+            this.useRunMids = false;
+            return this;
+        }
+
         boolean ready() {
             return bStand != null && bRun != null && bJump != null && bJump.length >= 3;
         }
@@ -106,9 +125,9 @@ public class Assets {
     // Urutan sama dengan CHAR_RES: 0 = Ryka, 1 = Kairo, 2 = Aveline, 3 = Jax, 4 = Vex-9.
     private final AnimSet[] animSets = {
             new AnimSet("ryka", 4, 5, 2.4f, 2.4f, 0.4f),   // Ryka
-            null,                                           // Kairo
-            null,                                           // Aveline
-            null,                                           // Jax
+            new AnimSet("kairo", 5, 5, 2.4f, 2.2f, 0.4f, false).noRunMids(),  // Kairo
+            new AnimSet("aveline", 5, 5, 2.4f, 1.8f, false),// Aveline
+            new AnimSet("jax", 5, 5, 2.4f, 2.0f, 0.5f, false),   // Jax
             new AnimSet("vex", 5, 5, 2.4f, 2.8f, 0.5f)      // Vex-9
     };
 
@@ -123,6 +142,9 @@ public class Assets {
     private final Paint blendPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private Bitmap frameA, frameB;     // frameB digambar di atas frameA dengan alpha
     private int frameBAlpha;
+    private float landAmount;          // 0..1, kuat tepat setelah mendarat (untuk efek gepeng)
+    private float tiltCur, stretchXCur = 1f, stretchYCur = 1f;   // gerak tambahan yang dihaluskan
+    private float runBob;   // naik-turun badan saat lari (satuan unit), bikin langkah terasa hidup
     private boolean wasOnGround = true;
     private long landStartMs = -1000;
     private float sinkCur = 0f;        // turun-naik kaki yang dihaluskan
@@ -415,7 +437,7 @@ public class Assets {
             if (id == 0) return null;
             ids.add(id);
             int mid = res(set.prefix + "_run" + i + "_mid");
-            if (mid != 0) ids.add(mid);
+            if (mid != 0 && set.useRunMids) ids.add(mid);
         }
         return toArray(ids);
     }
@@ -460,6 +482,27 @@ public class Assets {
         return true;
     }
 
+    // Baris paling bawah yang berisi piksel terlihat (posisi kaki) pada sebuah gambar.
+    private int footRow(int resId) {
+        BitmapFactory.Options opts = new BitmapFactory.Options();
+        opts.inScaled = false;
+        Bitmap bmp = BitmapFactory.decodeResource(context.getResources(), resId, opts);
+        if (bmp == null) return 0;
+
+        int w = bmp.getWidth();
+        int h = bmp.getHeight();
+        int[] px = new int[w * h];
+        bmp.getPixels(px, 0, w, 0, 0, w, h);
+        bmp.recycle();
+
+        for (int y = h - 1; y >= 0; y--) {
+            for (int x = 0; x < w; x++) {
+                if ((px[y * w + x] >>> 24) > 20) return y + 1;
+            }
+        }
+        return h;
+    }
+
     // Tinggi siluet (piksel yang terlihat) pada sebuah gambar.
     private float silhouetteHeight(int resId) {
         BitmapFactory.Options opts = new BitmapFactory.Options();
@@ -488,7 +531,7 @@ public class Assets {
 
     // Untuk gambar yang sudah sejajar dalam kanvas sama: semua frame diperbesar dengan
     // faktor yang sama, jadi ukuran dan posisi badan tidak berubah-ubah antar frame.
-    private Bitmap[] loadAnimAligned(int[] resIds, float k) {
+    private Bitmap[] loadAnimAligned(int[] resIds, float k, int cropH) {
         BitmapFactory.Options opts = new BitmapFactory.Options();
         opts.inScaled = false;
 
@@ -497,6 +540,14 @@ public class Assets {
             Bitmap raw = BitmapFactory.decodeResource(
                     context.getResources(), resIds[i], opts);
             if (raw == null) return null;
+
+            // Buang ruang kosong di bawah kaki supaya kaki pas menyentuh lantai.
+            if (cropH > 0 && cropH < raw.getHeight()) {
+                Bitmap cut = Bitmap.createBitmap(raw, 0, 0, raw.getWidth(), cropH);
+                raw.recycle();
+                raw = cut;
+            }
+
             out[i] = Bitmap.createScaledBitmap(
                     raw,
                     Math.max(1, Math.round(raw.getWidth() * k)),
@@ -525,9 +576,10 @@ public class Assets {
                 // Gambar sudah sejajar: satu faktor skala untuk semua frame.
                 float sil = silhouetteHeight(standId);
                 float k = sil > 0f ? charH / sil : 1f;
-                set.bStand = loadAnimAligned(stand, k);
-                set.bRun = loadAnimAligned(run, k);
-                set.bJump = loadAnimAligned(jump, k);
+                int foot = footRow(standId);
+                set.bStand = loadAnimAligned(stand, k, foot);
+                set.bRun = loadAnimAligned(run, k, foot);
+                set.bJump = loadAnimAligned(jump, k, foot);
             } else {
                 // Ukuran gambar beda-beda (gambar mentah): dipotong dan disamakan tingginya.
                 int canvasH = Math.round(charH);
@@ -898,6 +950,8 @@ public class Assets {
         frameA = null;
         frameB = null;
         frameBAlpha = 0;
+        runBob = 0f;
+        landAmount = 0f;
 
         AnimSet set = (currentChar >= 0 && currentChar < animSets.length)
                 ? animSets[currentChar] : null;
@@ -924,6 +978,11 @@ public class Assets {
 
             int air = set.bJump.length - 1;          // jumlah frame udara
             float posN = pos / 3f * (air - 1);
+            if (!set.crossfade) {
+                // Ganti frame langsung ke frame terdekat: tidak ada gambar dobel.
+                frameA = set.bJump[Math.max(0, Math.min(air - 1, Math.round(posN)))];
+                return;
+            }
             int i = Math.min((int) posN, air - 2);
             float f = posN - i;
             frameA = set.bJump[i];
@@ -944,6 +1003,8 @@ public class Assets {
             float f = ph - i;
             int n = set.bRun.length;
             frameA = set.bRun[Math.floorMod(i, n)];
+            // Dua hentakan langkah per siklus lari.
+            runBob = Math.abs((float) Math.sin(ph / n * 2.0 * Math.PI)) * 0.05f;
 
             float start = 1f - set.runBlend;
             if (f > start) {
@@ -957,6 +1018,7 @@ public class Assets {
         // Efek mendarat: jongkok (jump5) memudar ke pose normal.
         float land = LAND_MS > 0 ? 1f - (now - landStartMs) / (float) LAND_MS : 0f;
         if (land > 0f) {
+            landAmount = Math.min(1f, land);
             frameB = set.bJump[set.bJump.length - 1];
             frameBAlpha = Math.round(smooth(land) * 255f);
         }
@@ -982,20 +1044,47 @@ public class Assets {
             lastDrawMs = nowMs;
             sinkCur += (target - sinkCur) * (1f - (float) Math.exp(-dt * 25f));
 
-            float bottom = feetY + sinkCur + unitPx * FOOT_SINK_UNITS;
+            float bottom = feetY + sinkCur + unitPx * FOOT_SINK_UNITS - runBob * unitPx;
+
+            // Gerak tambahan yang halus (miring badan, melar/gepeng) supaya sprite yang
+            // frame-nya sedikit tetap terasa mengalir. Hanya untuk karakter sprite baru.
+            AnimSet set = (currentChar >= 0 && currentChar < animSets.length)
+                    ? animSets[currentChar] : null;
+            boolean smoothMotion = set != null && set.ready() && !set.crossfade;
+
+            float tiltT = 0f, sxT = 1f, syT = 1f;
+            if (smoothMotion) {
+                float v = p.vy / unitPx;
+                if (!p.onGround) {
+                    // Saat lompat badan tidak dimiringkan; hanya melar sesuai kecepatan.
+                    float s = Math.min(Math.abs(v), 14f) * 0.004f;
+                    syT = 1f + s;
+                    sxT = 1f - s * 0.6f;
+                } else {
+                    if (p.vx != 0f) tiltT = 3f + runBob * 40f;   // condong ke depan saat lari
+                    float sq = smooth(landAmount);
+                    syT = 1f - 0.07f * sq;                        // gepeng saat mendarat
+                    sxT = 1f + 0.05f * sq;
+                }
+            }
+            float ease = 1f - (float) Math.exp(-dt * 20f);
+            tiltCur += (tiltT - tiltCur) * ease;
+            stretchXCur += (sxT - stretchXCur) * ease;
+            stretchYCur += (syT - stretchYCur) * ease;
 
             c.save();
             if (facingLeft) {
                 c.scale(-1f, 1f, cx, 0f);
             }
+            c.translate(cx, bottom);
+            c.rotate(tiltCur);
+            c.scale(stretchXCur, stretchYCur);
 
-            c.drawBitmap(frameA, cx - frameA.getWidth() / 2f,
-                    bottom - frameA.getHeight(), paint);
+            c.drawBitmap(frameA, -frameA.getWidth() / 2f, -frameA.getHeight(), paint);
 
             if (frameB != null && frameBAlpha > 0) {
                 blendPaint.setAlpha(frameBAlpha);
-                c.drawBitmap(frameB, cx - frameB.getWidth() / 2f,
-                        bottom - frameB.getHeight(), blendPaint);
+                c.drawBitmap(frameB, -frameB.getWidth() / 2f, -frameB.getHeight(), blendPaint);
             }
             c.restore();
             return;
