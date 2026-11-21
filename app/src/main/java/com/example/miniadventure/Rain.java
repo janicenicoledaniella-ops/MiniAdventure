@@ -29,15 +29,20 @@ public class Rain {
     private static final float FADE_IN_SEC = 3f;
     private static final float FADE_OUT_SEC = 4f;
     private static final float FLASHLIGHT_LEAD_SEC = 40f;
+    private static final float CHEST_GRACE_SEC = 10f;
 
     private static final float VISION_NO_LIGHT = 3.2f;
-    private static final float VISION_LIGHT = 4.5f;
+    private static final float VISION_LIGHT = 3.6f;
+    private static final float VISION_CENTER_UP = 0.9f;
     private static final int DARK_NO_LIGHT = 225;
     private static final int DARK_LIGHT = 200;
 
     private static final float BEAM_LENGTH = 12f;
-    private static final float BEAM_HALF_ANGLE = 24f;
-    private static final float BEAM_TILT = 20f;
+    private static final float BEAM_HALF_ANGLE = 22f;
+    private static final float BEAM_TILT = -5f;
+    private static final float BEAM_BASE_HALF = 0.75f;
+    private static final float BEAM_FORWARD = 1.1f;
+    private static final float BEAM_HEIGHT = 1.25f;
 
     public static final int TYPE_NORMAL = 0;
     public static final int TYPE_WHITE_FOG = 1;
@@ -107,6 +112,8 @@ public class Rain {
     private float lightLevel;
     private float facing = 1f;
     private boolean darkFogJustEnded;
+    private boolean flashlightChestReady;
+    private float readySec;
 
     public void layout(int sw, int sh, float u) {
         this.sw = sw;
@@ -235,6 +242,9 @@ public class Rain {
     }
 
     private void scheduleNext(boolean first) {
+        flashlightChestReady = false;
+        readySec = 0f;
+
         if (first) {
             timer = randomRange(DRY_MIN_SEC * 0.5f, DRY_MAX_SEC * 0.6f);
         } else {
@@ -258,6 +268,18 @@ public class Rain {
 
     public float getIntensity() {
         return intensity;
+    }
+
+    public void notifyFlashlightChest() {
+        flashlightChestReady = true;
+    }
+
+    private boolean canStartWeather(boolean hasFlashlight) {
+        if (nextType != TYPE_DARK_FOG) {
+            return true;
+        }
+
+        return (flashlightChestReady || hasFlashlight) && readySec >= CHEST_GRACE_SEC;
     }
 
     public boolean wantsFlashlight() {
@@ -288,6 +310,10 @@ public class Rain {
 
         facing += (facingDir - facing) * Math.min(1f, dt * 9f);
 
+        if (!raining && nextType == TYPE_DARK_FOG && (flashlightChestReady || hasFlashlight)) {
+            readySec += dt;
+        }
+
         if (raining) {
             float elapsed = phaseTime - timer;
 
@@ -308,7 +334,7 @@ public class Rain {
                 intensity = 0f;
                 scheduleNext(false);
             }
-        } else if (timer <= 0f) {
+        } else if (timer <= 0f && canStartWeather(hasFlashlight)) {
             raining = true;
             currentType = nextType;
             phaseTime = currentType == TYPE_DARK_FOG ? DARK_FOG_SEC : RAIN_SEC;
@@ -393,7 +419,7 @@ public class Rain {
         float radius = (VISION_NO_LIGHT + (VISION_LIGHT - VISION_NO_LIGHT) * lightLevel) * unit;
 
         matrix.setScale(radius, radius);
-        matrix.postTranslate(px, py);
+        matrix.postTranslate(px, py - VISION_CENTER_UP * unit);
         holeShader.setLocalMatrix(matrix);
         holePaint.setShader(holeShader);
         maskCanvas.drawRect(0, 0, mw, mh, holePaint);
@@ -406,11 +432,11 @@ public class Rain {
             float dy = (float) Math.sin(tilt);
             float angle = (float) Math.atan2(dy, dx);
 
-            float ax = px + facing * 0.3f * unit;
-            float ay = py - 0.1f * unit;
+            float ax = px + facing * BEAM_FORWARD * unit;
+            float ay = py - BEAM_HEIGHT * unit;
             float length = BEAM_LENGTH * unit;
 
-            buildBeam(ax, ay, angle, length, (float) Math.toRadians(BEAM_HALF_ANGLE), 0.35f * unit);
+            buildBeam(ax, ay, angle, length, (float) Math.toRadians(BEAM_HALF_ANGLE), BEAM_BASE_HALF * unit);
 
             matrix.setScale(length, length);
             matrix.postRotate((float) Math.toDegrees(angle));
@@ -439,16 +465,21 @@ public class Rain {
         float dirX = (float) Math.cos(angle);
         float dirY = (float) Math.sin(angle);
 
-        float x1 = ax + length * (float) Math.cos(angle - half);
-        float y1 = ay + length * (float) Math.sin(angle - half);
-        float x2 = ax + length * (float) Math.cos(angle + half);
-        float y2 = ay + length * (float) Math.sin(angle + half);
+        float topX = ax + dirY * baseHalfWidth;
+        float topY = ay - dirX * baseHalfWidth;
+        float botX = ax - dirY * baseHalfWidth;
+        float botY = ay + dirX * baseHalfWidth;
+
+        float x1 = topX + length * (float) Math.cos(angle - half);
+        float y1 = topY + length * (float) Math.sin(angle - half);
+        float x2 = botX + length * (float) Math.cos(angle + half);
+        float y2 = botY + length * (float) Math.sin(angle + half);
 
         beamPath.reset();
-        beamPath.moveTo(ax + dirY * baseHalfWidth, ay - dirX * baseHalfWidth);
+        beamPath.moveTo(topX, topY);
         beamPath.lineTo(x1, y1);
         beamPath.lineTo(x2, y2);
-        beamPath.lineTo(ax - dirY * baseHalfWidth, ay + dirX * baseHalfWidth);
+        beamPath.lineTo(botX, botY);
         beamPath.close();
     }
 

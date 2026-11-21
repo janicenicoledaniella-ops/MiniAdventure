@@ -152,6 +152,13 @@ public class GameView extends SurfaceView implements Runnable {
         world.setFlashlightChestWanted(rain.wantsFlashlight() && !hasFlashlight);
         world.buildLevel(u, round);
 
+        for (Treasure treasure : world.treasures) {
+            if (treasure.reward == Treasure.FLASHLIGHT) {
+                rain.notifyFlashlightChest();
+                break;
+            }
+        }
+
         resetPlayer();
     }
 
