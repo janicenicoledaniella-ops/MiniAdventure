@@ -59,6 +59,7 @@ public class Rain {
     private static final int FOG_BLOBS = 6;
 
     private static final int MASK_SCALE = 4;
+    private static final int FOG_SCALE = 6;
 
     private final Random random = new Random();
     private final Paint dropPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -76,6 +77,9 @@ public class Rain {
     private final Matrix matrix = new Matrix();
     private final Path beamPath = new Path();
     private final RectF maskDst = new RectF();
+    private final Paint fogLayerPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+    private Bitmap fogBitmap;
+    private Canvas fogCanvas;
     private Bitmap maskBitmap;
     private Bitmap glowBitmap;
     private Canvas maskCanvas;
@@ -178,6 +182,9 @@ public class Rain {
         maskCanvas = new Canvas(maskBitmap);
         glowBitmap = Bitmap.createBitmap(mw, mh, Bitmap.Config.ARGB_8888);
         glowCanvas = new Canvas(glowBitmap);
+        fogBitmap = Bitmap.createBitmap(
+                Math.max(1, sw / FOG_SCALE), Math.max(1, sh / FOG_SCALE), Bitmap.Config.ARGB_8888);
+        fogCanvas = new Canvas(fogBitmap);
         maskDst.set(0, 0, sw, sh);
 
         holePaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
@@ -370,30 +377,12 @@ public class Rain {
         boolean foggy = currentType != TYPE_NORMAL;
 
         int dimMax = dark ? MAX_DIM_ALPHA_DARK : MAX_DIM_ALPHA;
-        dimPaint.setColor(Color.argb(Math.round(dimMax * intensity), 20, 30, 60));
-        c.drawRect(0, 0, sw, sh, dimPaint);
 
         if (foggy) {
-            Paint haze = dark ? hazeDarkPaint : hazeWhitePaint;
-            haze.setAlpha(alpha);
-            c.drawRect(0, 0, sw, sh, haze);
-
-            for (int i = 0; i < FOG_BLOBS; i++) {
-                float span = sw + 2f * blobR[i];
-                float px = (blobX[i] + fogTime * blobSpeed[i] - camX * 0.25f) % span;
-
-                if (px < 0f) {
-                    px += span;
-                }
-
-                Paint blob = dark ? blobDarkPaint[i] : blobWhitePaint[i];
-                blob.setAlpha(alpha);
-
-                c.save();
-                c.translate(px - blobR[i], blobY[i]);
-                c.drawCircle(0, 0, blobR[i], blob);
-                c.restore();
-            }
+            drawFog(c, camX, dark, dimMax, alpha);
+        } else {
+            dimPaint.setColor(Color.argb(Math.round(dimMax * intensity), 20, 30, 60));
+            c.drawRect(0, 0, sw, sh, dimPaint);
         }
 
         drawDrops(c, camX, platforms);
@@ -403,6 +392,42 @@ public class Rain {
 
             drawVision(c, playerX, playerY, Math.round(outer * intensity));
         }
+    }
+
+    private void drawFog(Canvas c, float camX, boolean dark, int dimMax, int alpha) {
+        fogBitmap.eraseColor(0);
+
+        fogCanvas.save();
+        fogCanvas.scale(1f / FOG_SCALE, 1f / FOG_SCALE);
+
+        dimPaint.setColor(Color.argb(dimMax, 20, 30, 60));
+        fogCanvas.drawRect(0, 0, sw, sh, dimPaint);
+
+        Paint haze = dark ? hazeDarkPaint : hazeWhitePaint;
+        haze.setAlpha(255);
+        fogCanvas.drawRect(0, 0, sw, sh, haze);
+
+        for (int i = 0; i < FOG_BLOBS; i++) {
+            float span = sw + 2f * blobR[i];
+            float px = (blobX[i] + fogTime * blobSpeed[i] - camX * 0.25f) % span;
+
+            if (px < 0f) {
+                px += span;
+            }
+
+            Paint blob = dark ? blobDarkPaint[i] : blobWhitePaint[i];
+            blob.setAlpha(255);
+
+            fogCanvas.save();
+            fogCanvas.translate(px - blobR[i], blobY[i]);
+            fogCanvas.drawCircle(0, 0, blobR[i], blob);
+            fogCanvas.restore();
+        }
+
+        fogCanvas.restore();
+
+        fogLayerPaint.setAlpha(alpha);
+        c.drawBitmap(fogBitmap, null, maskDst, fogLayerPaint);
     }
 
     private void drawVision(Canvas c, float playerX, float playerY, int outerAlpha) {
