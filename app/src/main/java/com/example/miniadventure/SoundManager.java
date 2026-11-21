@@ -1,5 +1,4 @@
 package com.example.miniadventure;
-
 import android.content.Context;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
@@ -13,22 +12,12 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
-// Mengelola suara game:
-//  - efek pendek (koin, lompat, game over) lewat SoundPool
-//  - musik latar (waktu main) lewat MediaPlayer, diulang terus
-// File suara ada di res/raw: coin.mp3, lompat.mp3, game_over.mp3, waktu_main.mp3,
-//  jatuh.mp3, jatuh2.mp3, matikan_enemy.mp3
-//
-// Semua inisialisasi suara dikerjakan di background thread supaya
-// tidak memblokir main thread (penyebab layar hitam saat startup).
 public class SoundManager {
 
     private static final String TAG = "SoundManager";
 
-    // true = kalau suara gagal dimuat, tampilkan pesan (Toast) di layar. Matikan kalau sudah beres.
     private static final boolean SHOW_ERRORS = true;
 
-    // Atur volume di sini (0.0 sampai 1.0).
     private static final float MUSIC_VOLUME = 0.45f;
     private static final float COIN_VOLUME = 1.0f;
     private static final float JUMP_VOLUME = 0.9f;
@@ -36,20 +25,15 @@ public class SoundManager {
     private static final float FALL_VOLUME = 0.9f;
     private static final float FALL_FINAL_VOLUME = 1.0f;
     private static final float ENEMY_DIE_VOLUME = 1.0f;
-    private static final float RAIN_VOLUME = 0.6f; // suara hujan paling keras (0.0 sampai 1.0)
+    private static final float RAIN_VOLUME = 0.6f;
 
-    // Kecepatan putar suara jatuh (0.5 sampai 2.0). 1.0 = normal.
-    // Makin besar = makin cepat & pendek. Naikkan kalau masih terasa lambat.
     private static final float FALL_RATE = 1.3f;
 
-    // Jeda (ms) dari jatuh2.mp3 mulai sampai suara game over boleh bunyi.
-    // Kira-kira panjang jatuh2 setelah dipercepat. Naikkan kalau masih bertumpuk.
     private static final long GAME_OVER_AFTER_FALL_MS = 600;
 
     private final Context context;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
-    // Suara game over yang ditunda (dipakai setelah jatuh2.mp3 selesai).
     private final Runnable delayedGameOver = new Runnable() {
         @Override
         public void run() {
@@ -63,17 +47,14 @@ public class SoundManager {
             Collections.synchronizedSet(new HashSet<Integer>());
 
     private volatile MediaPlayer music;
-    private MediaPlayer rainSound; // suara hujan, diulang terus
-    private float rainLevel;       // 0..1, mengikuti kekuatan hujan
-    private boolean musicWanted;   // musik seharusnya berbunyi (sedang bermain)
-    private boolean paused;        // aplikasi di latar belakang
-    private boolean released;      // SoundManager sudah dilepas
+    private MediaPlayer rainSound;
+    private float rainLevel;
+    private boolean musicWanted;
+    private boolean paused;
+    private boolean released;
 
     public SoundManager(Context context) {
         this.context = context.getApplicationContext();
-
-        // Jangan inisialisasi di sini: MediaPlayer.create() dan SoundPool.load()
-        // bisa lama dan akan memblokir main thread.
         Thread t = new Thread(new Runnable() {
             @Override
             public void run() {
@@ -83,7 +64,6 @@ public class SoundManager {
         t.start();
     }
 
-    // Berjalan di background thread.
     private void init() {
         initSoundPool();
         initMusic();
@@ -108,8 +88,6 @@ public class SoundManager {
                     if (status == 0) {
                         loaded.add(sampleId);
                         Log.d(TAG, "suara siap, id=" + sampleId);
-
-                        // Semua efek sudah dimuat (hanya tampil selama SHOW_ERRORS = true).
                         if (loaded.size() == 6) {
                             info(music != null
                                     ? "Semua suara berhasil dimuat. Naikkan volume media kalau tidak terdengar."
@@ -181,7 +159,6 @@ public class SoundManager {
 
             music = mp;
 
-            // Game sudah mulai sebelum musik siap: langsung putar sekarang.
             if (musicWanted && !paused) {
                 try {
                     mp.start();
@@ -226,12 +203,10 @@ public class SoundManager {
 
             rainSound = mp;
 
-            // Hujan sudah turun sebelum suaranya siap: langsung putar.
             applyRainLevel();
         }
     }
 
-    // Tulis ke Logcat dan (opsional) tampilkan Toast supaya masalahnya kelihatan.
     private void report(final String message) {
         Log.e(TAG, message);
 
@@ -296,33 +271,26 @@ public class SoundManager {
         play(gameOverId, GAME_OVER_VOLUME);
     }
 
-    // Game over setelah jatuh: tunggu jatuh2.mp3 selesai dulu.
     public void playGameOverAfterFall() {
         mainHandler.removeCallbacks(delayedGameOver);
         mainHandler.postDelayed(delayedGameOver, GAME_OVER_AFTER_FALL_MS);
     }
 
-    // Jatuh ke jurang.
     public void playFall() {
         play(fallId, FALL_VOLUME, FALL_RATE);
     }
 
-    // Jatuh ke jurang di nyawa terakhir (heart habis).
     public void playFallFinal() {
         play(fallFinalId, FALL_FINAL_VOLUME, FALL_RATE);
     }
 
-    // Musuh jamur mati diinjak.
     public void playEnemyDie() {
         play(enemyDieId, ENEMY_DIE_VOLUME);
     }
 
-    // level 0..1 = kekuatan hujan saat ini. Dipanggil GameView tiap frame,
-    // jadi suara hujan menguat dan mereda bersama hujannya.
     public synchronized void setRainVolume(float level) {
         level = Math.max(0f, Math.min(1f, level));
 
-        // Tidak perlu bekerja lagi kalau hampir tidak berubah.
         if (Math.abs(level - rainLevel) < 0.01f && (level > 0f) == (rainLevel > 0f)) {
             return;
         }
@@ -354,15 +322,12 @@ public class SoundManager {
         }
     }
 
-    // Musik dimulai dari awal setiap permainan baru.
     public synchronized void startMusic() {
         musicWanted = true;
 
-        // Permainan baru: batalkan suara game over yang masih menunggu.
         mainHandler.removeCallbacks(delayedGameOver);
 
         if (music == null) {
-            // Belum siap: akan diputar otomatis di akhir initMusic().
             Log.w(TAG, "startMusic: musik belum siap, akan diputar begitu siap");
             return;
         }
@@ -398,10 +363,9 @@ public class SoundManager {
         }
     }
 
-    // Aplikasi ke latar belakang: musik berhenti sementara.
     public synchronized void onPause() {
         paused = true;
-        applyRainLevel(); // suara hujan ikut berhenti
+        applyRainLevel();
 
         if (music == null) {
             return;
@@ -415,10 +379,9 @@ public class SoundManager {
         }
     }
 
-    // Aplikasi kembali: musik lanjut kalau memang sedang bermain.
     public synchronized void onResume() {
         paused = false;
-        applyRainLevel(); // suara hujan lanjut kalau sedang hujan
+        applyRainLevel();
 
         if (music == null || !musicWanted) {
             return;

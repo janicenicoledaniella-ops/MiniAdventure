@@ -4,16 +4,12 @@ import android.graphics.RectF;
 
 import java.util.List;
 
-// Batu rintangan yang menggelinding ke arah kiri (ke arah pemain).
-// Bisa menggelinding di tanah, atau jatuh dari brick lalu menggelinding di tanah.
 public class Rock {
-
-    // Ukuran dalam satuan u.
-    public static final float SIZE = 0.8f;      // kotak dasar batu
-    public static final float DRAW_W = 0.9f;    // lebar gambar batu
+    public static final float SIZE = 0.8f;
+    public static final float DRAW_W = 0.9f;
 
     private static final float GRAVITY = 32f;
-    private static final float ROLL_RADIUS = 0.45f;  // makin kecil, makin cepat berputar
+    private static final float ROLL_RADIUS = 0.45f;
 
     public final RectF rect;
     public float vx;
@@ -21,7 +17,7 @@ public class Rock {
     public float angle;
     public boolean onGround;
 
-    private float stuckTime; // lama batu hampir tidak bergerak maju
+    private float stuckTime;
 
     public Rock(float left, float bottom, float speed, float u) {
         float size = SIZE * u;
@@ -30,7 +26,6 @@ public class Rock {
         vx = -Math.abs(speed);
     }
 
-    // True kalau batu tersangkut (tidak maju cukup lama). World akan menghapusnya.
     public boolean isStuck() {
         return stuckTime > 0.7f;
     }
@@ -40,12 +35,8 @@ public class Rock {
         float prevLeft = rect.left;
         float prevBottom = rect.bottom;
 
-        // Gerak horizontal.
         rect.offset(vx * dt, 0);
 
-        // Batu tidak menembus sisi tanah saat jatuh ke jurang.
-        // Hanya tanah tebal yang menghalangi. Brick dan anak tangga finis tipis, jadi dilewati
-        // supaya batu tidak nyangkut di sisinya.
         for (RectF platform : platforms) {
             if (platform.height() <= 1.5f * u) {
                 continue;
@@ -62,15 +53,12 @@ public class Rock {
             }
         }
 
-        // Gravitasi.
         vy += GRAVITY * u * dt;
         rect.offset(0, vy * dt);
 
         onGround = false;
 
         for (RectF platform : platforms) {
-            // Batu tertahan selama titik tengahnya masih di atas platform,
-            // jadi jatuh begitu lewat tepi.
             boolean supported = rect.centerX() >= platform.left
                     && rect.centerX() <= platform.right;
 
@@ -85,19 +73,16 @@ public class Rock {
             }
         }
 
-        // Hitung lama batu tidak maju (tersangkut).
         if (Math.abs(rect.left - startLeft) < Math.abs(vx) * dt * 0.3f) {
             stuckTime += dt;
         } else {
             stuckTime = 0f;
         }
 
-        // Putaran mengikuti jarak tempuh (ke kiri = berputar berlawanan arah jarum jam).
         angle += (vx * dt) / (ROLL_RADIUS * u) * (180f / (float) Math.PI);
         angle %= 360f;
     }
 
-    // Area tabrakan dibuat sedikit lebih kecil dari gambar supaya adil buat pemain.
     public RectF getHitbox(float u) {
         return new RectF(
                 rect.left + 0.12f * u,

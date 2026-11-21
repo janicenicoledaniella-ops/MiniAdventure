@@ -18,20 +18,14 @@ import android.graphics.Typeface;
 
 import java.util.Random;
 
-/**
- * Layar loading: langit malam bergradasi, bulan, bintang + bintang jatuh, sinar berputar,
- * awan, bukit berlapis yang bergeser (parallax), kunang-kunang, logo dengan kilau,
- * koin melayang, dan progress bar emas dengan karakter berlari + jejak percikan.
- * Semua animasi digambar lewat kode di Canvas. Tidak ada tulisan selain persen / "GO!".
- */
 public class LoadingScreen {
 
-    private static final long MIN_NS = 1_800_000_000L;   // lama minimal layar tampil
-    private static final long HOLD_NS = 550_000_000L;    // jeda setelah 100% ("GO!" + fade)
-    private static final float LOGO_H = 5.8f;            // tinggi logo (satuan u)
-    private static final float LOGO_TOP = 1.9f;          // posisi atas logo (satuan u)
-    private static final float RUNNER_H = 1.5f;          // tinggi karakter = jarak logo ke bar
-    private static final float FLAG_H = 1.7f;            // tinggi bendera di ujung bar
+    private static final long MIN_NS = 1_800_000_000L;
+    private static final long HOLD_NS = 550_000_000L;
+    private static final float LOGO_H = 5.8f;
+    private static final float LOGO_TOP = 1.9f;
+    private static final float RUNNER_H = 1.5f;
+    private static final float FLAG_H = 1.7f;
 
     private static final int[] RUN_FRAMES = {
             R.drawable.ryka_run1,
@@ -45,7 +39,6 @@ public class LoadingScreen {
             {0.14f, 0.30f}, {0.86f, 0.36f}, {0.22f, 0.54f}, {0.78f, 0.58f}
     };
 
-    // Bukit berlapis (satuan u): tinggi dasar, amplitudo, kecepatan geser, warna.
     private static final float[] HILL_BASE = {8.7f, 9.6f, 10.6f};
     private static final float[] HILL_AMP = {0.9f, 0.7f, 0.5f};
     private static final float[] HILL_SPEED = {0.15f, 0.35f, 0.7f};
@@ -91,7 +84,6 @@ public class LoadingScreen {
         this.context = context;
     }
 
-    // Dipanggil sekali sebelum loading dimulai.
     public void begin(int sw, int sh, float u) {
         this.sw = sw;
         this.sh = sh;
@@ -173,7 +165,6 @@ public class LoadingScreen {
         ready = true;
     }
 
-    // Dipanggil ketika semua gambar game selesai dimuat.
     public void markDone() {
         if (doneNs < 0) {
             doneNs = System.nanoTime();
@@ -184,7 +175,6 @@ public class LoadingScreen {
         return finishNs >= 0 && System.nanoTime() - finishNs >= HOLD_NS;
     }
 
-    // Lepaskan gambar loading setelah selesai.
     public void release() {
         ready = false;
         logo = null;
@@ -203,8 +193,6 @@ public class LoadingScreen {
         float dt = Math.min(0.05f, (now - lastNs) / 1_000_000_000f);
         lastNs = now;
         float t = (now - startNs) / 1_000_000_000f;
-
-        // Progress dihaluskan: naik pelan ke 90%, lalu penuh saat loading selesai.
         boolean done = doneNs >= 0;
         float target = done ? 1f : 0.9f * (1f - (float) Math.exp(-t * 1.1f));
         float speed = done ? 6f : 3f;
@@ -230,8 +218,6 @@ public class LoadingScreen {
         drawOverlays(c, t, now);
     }
 
-    // ---------------- Langit ----------------
-
     private void drawSky(Canvas c, float t) {
         p.setStyle(Paint.Style.FILL);
         p.setShader(bgShader);
@@ -242,7 +228,6 @@ public class LoadingScreen {
         c.drawRect(0, 0, sw, sh, p);
         p.setShader(null);
 
-        // Bulan.
         float mx = sw * 0.1f;
         float my = sh * 0.15f;
         p.setColor(0xFFFFF1B8);
@@ -252,7 +237,6 @@ public class LoadingScreen {
         c.drawCircle(mx + 0.3f * u, my + 0.1f * u, 0.24f * u, p);
         c.drawCircle(mx - 0.1f * u, my + 0.38f * u, 0.12f * u, p);
 
-        // Bintang berkedip.
         for (int i = 0; i < starX.length; i++) {
             float a = 0.5f + 0.5f * (float) Math.sin(t * 2f + starPhase[i]);
             p.setColor(Color.WHITE);
@@ -262,7 +246,6 @@ public class LoadingScreen {
 
         p.setAlpha(255);
 
-        // Bintang jatuh tiap 5 detik.
         float s = (t - 1f) % 5f;
 
         if (t > 1f && s < 0.9f) {
@@ -284,7 +267,6 @@ public class LoadingScreen {
         }
     }
 
-    // Sinar berputar di belakang logo.
     private void drawRays(Canvas c, float t) {
         float cx = sw / 2f;
         float radius = Math.max(sw, sh);
@@ -327,7 +309,6 @@ public class LoadingScreen {
         }
     }
 
-    // Bukit berlapis yang bergeser pelan ke kiri.
     private void drawHills(Canvas c, float t) {
         float step = Math.max(6f, u * 0.25f);
 
@@ -353,7 +334,6 @@ public class LoadingScreen {
         }
     }
 
-    // Kunang-kunang emas yang naik pelan.
     private void drawFireflies(Canvas c, float t) {
         p.setStyle(Paint.Style.FILL);
 
@@ -391,8 +371,6 @@ public class LoadingScreen {
         }
     }
 
-    // ---------------- Logo ----------------
-
     private void drawLogo(Canvas c, float t) {
         if (logo == null) {
             return;
@@ -400,18 +378,17 @@ public class LoadingScreen {
 
         float pop = Math.min(1f, t / 0.8f);
         float x = pop - 1f;
-        float ease = 1f + 2.70158f * x * x * x + 1.70158f * x * x;   // easeOutBack
+        float ease = 1f + 2.70158f * x * x * x + 1.70158f * x * x;
         float scale = (0.6f + 0.4f * ease)
                 * (1f + 0.015f * (float) Math.sin(t * 2.2f));
-        float drop = -(1f - pop) * (1f - pop) * 2f * u;   // jatuh dari atas
-        float tilt = (float) Math.sin(t * 1.3f) * 1.4f;   // goyang pelan
+        float drop = -(1f - pop) * (1f - pop) * 2f * u;
+        float tilt = (float) Math.sin(t * 1.3f) * 1.4f;
 
         float lh = LOGO_H * u;
         float lw = lh * logo.getWidth() / logo.getHeight();
         float cx = sw / 2f;
         float cy = logoCy + (float) Math.sin(t * 1.6f) * 0.08f * u + drop;
 
-        // Bayangan di bawah logo.
         p.setStyle(Paint.Style.FILL);
         p.setColor(0x44000000);
         p.setAlpha((int) (68 * pop));
@@ -433,7 +410,6 @@ public class LoadingScreen {
         p.setAlpha(255);
         c.drawBitmap(logo, null, r, p);
 
-        // Kilau yang menyapu logo tiap 3,2 detik (hanya mengenai piksel logo).
         float cycle = t % 3.2f;
 
         if (t > 0.9f && cycle < 1.4f) {
@@ -468,12 +444,9 @@ public class LoadingScreen {
         c.drawPath(stripe, p);
     }
 
-    // ---------------- Progress bar ----------------
 
     private void drawBar(Canvas c, float t, long now) {
         float bl = barLeft, bt = barTop, bw = barW, bh = barH;
-
-        // Cahaya di sekitar bar.
         p.setStyle(Paint.Style.FILL);
         p.setColor(0xFFFFC933);
         p.setAlpha((int) (38 + 24 * Math.sin(t * 3f)));
@@ -481,17 +454,14 @@ public class LoadingScreen {
         c.drawRoundRect(r, bh, bh, p);
         p.setAlpha(255);
 
-        // Bayangan.
         p.setColor(0x66000000);
         r.set(bl, bt + 0.14f * u, bl + bw, bt + bh + 0.14f * u);
         c.drawRoundRect(r, bh / 2f, bh / 2f, p);
 
-        // Jalur gelap.
         p.setColor(0xFF0A1330);
         r.set(bl, bt, bl + bw, bt + bh);
         c.drawRoundRect(r, bh / 2f, bh / 2f, p);
 
-        // Isi emas, dipotong mengikuti bentuk jalur.
         float fw = Math.max(bh, bw * shown);
 
         trackPath.reset();
@@ -505,7 +475,6 @@ public class LoadingScreen {
         c.drawRect(bl, bt, bl + bw, bt + bh, p);
         p.setShader(null);
 
-        // Garis miring yang bergerak.
         float stripeW = bh * 0.9f;
         float off = (t * bh * 1.2f) % (stripeW * 2f);
         p.setColor(0x30FFFFFF);
@@ -520,11 +489,9 @@ public class LoadingScreen {
             c.drawPath(stripe, p);
         }
 
-        // Kilau di bagian atas.
         p.setColor(0x66FFFFFF);
         c.drawRect(bl, bt + bh * 0.1f, bl + fw, bt + bh * 0.4f, p);
 
-        // Kilat putih saat selesai.
         if (finishNs >= 0) {
             float gt = (now - finishNs) / 1_000_000_000f;
             float flash = Math.max(0f, 1f - gt / 0.3f);
@@ -534,14 +501,12 @@ public class LoadingScreen {
 
         c.restore();
 
-        // Bingkai cokelat.
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeWidth(0.1f * u);
         p.setColor(0xFF4A2A12);
         c.drawRoundRect(r, bh / 2f, bh / 2f, p);
         p.setStyle(Paint.Style.FILL);
 
-        // Bendera di ujung bar.
         if (flag != null) {
             float fh = FLAG_H * u;
             float fwid = fh * flag.getWidth() / flag.getHeight();
@@ -550,12 +515,10 @@ public class LoadingScreen {
             c.drawBitmap(flag, null, r, p);
         }
 
-        // Karakter berlari mengikuti ujung isi bar.
         float hx = Math.max(bl, Math.min(bl + bw, bl + bw * shown));
         float bounce = Math.abs((float) Math.sin(t * 12f)) * 0.12f * u;
         float feet = bt + 0.15f * u - bounce;
 
-        // Debu dan percikan di belakang karakter.
         if (shown > 0.02f && shown < 1f) {
             for (int i = 0; i < 6; i++) {
                 float dx = hx - 0.4f * u - i * 0.35f * u;
@@ -584,7 +547,6 @@ public class LoadingScreen {
             c.drawBitmap(frame, null, r, p);
         }
 
-        // Persen di tengah bar, berubah jadi "GO!" saat selesai.
         String label;
         float size = bh * 0.62f;
 
@@ -600,7 +562,6 @@ public class LoadingScreen {
                 size, Color.WHITE, 0xFF4A2A12, Paint.Align.CENTER);
     }
 
-    // Transisi masuk dari hitam dan keluar ke navy (menuju layar pilih karakter).
     private void drawOverlays(Canvas c, float t, long now) {
         p.setStyle(Paint.Style.FILL);
 
@@ -641,8 +602,6 @@ public class LoadingScreen {
         p.setTextAlign(Paint.Align.LEFT);
     }
 
-    // ---- Memuat gambar kecil agar hemat memori ----
-
     private static Bitmap decode(Resources res, int id, int targetH) {
         BitmapFactory.Options o = new BitmapFactory.Options();
         o.inJustDecodeBounds = true;
@@ -659,7 +618,6 @@ public class LoadingScreen {
         return BitmapFactory.decodeResource(res, id, o);
     }
 
-    // Batas area tidak transparan: {minX, minY, maxX, maxY} atau null.
     private static int[] bounds(Bitmap b) {
         int w = b.getWidth();
         int h = b.getHeight();
@@ -700,8 +658,6 @@ public class LoadingScreen {
         return Bitmap.createBitmap(b, bb[0], bb[1],
                 bb[2] - bb[0] + 1, bb[3] - bb[1] + 1);
     }
-
-    // Semua frame dipotong dengan batas yang sama supaya tidak bergetar.
     private static Bitmap[] decodeRunner(Resources res, int targetH) {
         Bitmap[] frames = new Bitmap[RUN_FRAMES.length];
         int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE;

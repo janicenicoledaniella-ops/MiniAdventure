@@ -12,38 +12,32 @@ public class World {
     public final List<RectF> coins = new ArrayList<>();
     public final List<Enemy> enemies = new ArrayList<>();
     public final List<Treasure> treasures = new ArrayList<>();
-    public final List<Rock> rocks = new ArrayList<>(); // batu rintangan
+    public final List<Rock> rocks = new ArrayList<>();
 
     public RectF goal;
 
     private final Random random = new Random();
 
-    // Peti harta muncul terjadwal berdasarkan nomor level:
-    // - Peti pertama selalu di level TREASURE_FIRST_LEVEL (level 3).
-    // - Setelah itu jaraknya acak TREASURE_GAP_MIN..TREASURE_GAP_MAX level (2, 3, atau 4).
-    //   Contoh: level 3 -> 5/6/7 -> dst.
     private static final int TREASURE_FIRST_LEVEL = 3;
     private static final int TREASURE_GAP_MIN = 2;
     private static final int TREASURE_GAP_MAX = 4;
 
-    // Batu rintangan: mulai muncul dari level ROCK_MIN_ROUND, munculnya acak.
     private static final int ROCK_MIN_ROUND = 4;
-    private static final float ROCK_CHANCE = 0.75f;   // peluang batu muncul tiap giliran
+    private static final float ROCK_CHANCE = 0.75f;
     private float rockTimer;
     private int currentRound = 1;
     private float finishStartPx;
 
-    private int nextTreasureLevel = TREASURE_FIRST_LEVEL; // level berikutnya yang dapat peti
-    private int currentTreasureLevel = -1;                // level terakhir yang sudah diberi peti
+    private int nextTreasureLevel = TREASURE_FIRST_LEVEL;
+    private int currentTreasureLevel = -1;
     private int lastTreasurePlace = -1;
-    private boolean flashlightChestWanted; // peti senter dijamin ada di level ini
+    private boolean flashlightChestWanted;
 
     private int score;
 
     public void resetScore() {
         score = 0;
 
-        // Permainan baru: jadwal peti kembali ke level 3.
         nextTreasureLevel = TREASURE_FIRST_LEVEL;
         currentTreasureLevel = -1;
         lastTreasurePlace = -1;
@@ -69,7 +63,6 @@ public class World {
         rocks.clear();
         rockTimer = rand(4f, 7f);
 
-        // Skor tetap berlanjut antarputaran.
         round = Math.max(1, round);
         currentRound = round;
 
@@ -87,14 +80,11 @@ public class World {
         float normalGapMax =
                 1.8f + difficulty * 2.7f;
 
-        // Area awal tetap aman tanpa musuh.
         addGround(0, 14, u);
         addCoins(rand(4, 7), 8, 3, u);
 
-        // Daftar tanah utama (x, lebar): tempat peti harta boleh muncul.
         List<float[]> groundSections = new ArrayList<>();
 
-        // Daftar pijakan brick melayang: tempat peti harta di atas brick.
         List<RectF> brickPlatforms = new ArrayList<>();
 
         float end = 14;
@@ -127,9 +117,6 @@ public class World {
                 }
 
                 if (round >= 8) {
-                    // Lebar pemain 0,8 unit.
-                    // Pijakan ini cukup untuk berdiri,
-                    // tetapi membutuhkan pendaratan lebih tepat.
                     islandWidth = rand(1.2f, 1.6f);
                 } else if (round >= 5) {
                     islandWidth = rand(2f, 2.6f);
@@ -146,7 +133,6 @@ public class World {
                         u
                 );
 
-                // Satu koin tepat di tengah pijakan.
                 addCoins(
                         islandX + islandWidth / 2f - 0.25f,
                         8,
@@ -166,7 +152,6 @@ public class World {
             addGround(x, width, u);
             groundSections.add(new float[]{x, width});
 
-            // Platform atas tidak selalu muncul.
             RectF floatingPlatform = null;
 
             if (random.nextFloat() < 0.65f) {
@@ -207,7 +192,6 @@ public class World {
                 );
             }
 
-            // Posisi dan jumlah koin tanah juga diacak.
             addCoins(
                     x + rand(2, width - 5),
                     8,
@@ -215,13 +199,9 @@ public class World {
                     u
             );
 
-            // Musuh ditempatkan di tanah utama.
-            // Pijakan kecil di tengah jurang tidak diberi musuh.
             if (i == 0 ||
                     random.nextFloat() < 0.45f + difficulty * 0.2f) {
 
-                // Semakin tinggi putaran, semakin kecil jarak
-                // batas patroli dari tepi tanah.
                 float margin = Math.max(
                         1.3f,
                         3.5f - (round - 1) * 0.2f
@@ -230,7 +210,6 @@ public class World {
                 float minX = x + margin;
                 float maxX = x + width - margin;
 
-                // Posisi awal musuh tidak selalu di tengah.
                 float enemyX = rand(
                         minX,
                         maxX - 0.8f
@@ -247,7 +226,6 @@ public class World {
 
                 enemies.add(enemy);
             }
-            // Musuh tambahan pada floating platform.
             if (round >= 2 &&
                     floatingPlatform != null &&
                     random.nextFloat() < 0.15f + difficulty * 0.35f) {
@@ -280,9 +258,8 @@ public class World {
             end = x + width;
         }
 
-        // Peti harta: muncul sesuai jadwal level.
         maybeSpawnTreasure(groundSections, brickPlatforms, u, round);
-        ensureFlashlightChest(groundSections, brickPlatforms, u); // peti senter untuk kabut gelap
+        ensureFlashlightChest(groundSections, brickPlatforms, u);
 
         buildFinish(
                 end,
@@ -301,10 +278,8 @@ public class World {
         float finishX =
                 previousEnd + rand(1.3f, maxGap);
 
-        finishStartPx = finishX * u; // batu tidak muncul di area finis
+        finishStartPx = finishX * u;
 
-        // Tanah di bawah platform finis tetap tersedia
-        // agar pemain bisa mencoba melompat kembali.
         addGround(finishX, 20, u);
 
         int steps;
@@ -395,13 +370,11 @@ public class World {
         }
     }
 
-    // Hapus semua batu (dipanggil saat pemain mulai lagi setelah kehilangan nyawa).
     public void clearRocks() {
         rocks.clear();
         rockTimer = rand(3f, 6f);
     }
 
-    // Atur kapan batu muncul dan gerakkan semua batu.
     public void updateRocks(float dt, float u, float camX, int sw) {
         if (currentRound < ROCK_MIN_ROUND) {
             return;
@@ -410,7 +383,6 @@ public class World {
         rockTimer -= dt;
 
         if (rockTimer <= 0f) {
-            // Makin tinggi level, jedanya makin pendek (maksimal 40% lebih cepat).
             float pace = Math.max(0.6f, 1f - (currentRound - ROCK_MIN_ROUND) * 0.06f);
 
             rockTimer = rand(3.5f, 7.5f) * pace;
@@ -427,7 +399,6 @@ public class World {
 
             rock.update(dt, u, platforms);
 
-            // Hapus batu yang jatuh ke jurang, sudah jauh di belakang layar, atau tersangkut.
             if (rock.rect.top > 14f * u || rock.rect.right < camX - 3f * u || rock.isStuck()) {
                 rocks.remove(i);
             }
@@ -450,7 +421,6 @@ public class World {
         return rand(3.2f, 4.6f) * boost * u;
     }
 
-    // Jenis batu diacak: menggelinding dari brick (jatuh ke tanah) atau langsung di tanah.
     private void spawnRock(float u, float camX, int sw) {
         if (random.nextFloat() < 0.6f && spawnBrickRock(u, camX, sw)) {
             return;
@@ -469,7 +439,6 @@ public class World {
         return false;
     }
 
-    // Batu mulai di ujung kanan sebuah brick, menggelinding ke kiri lalu jatuh ke tanah.
     private boolean spawnBrickRock(float u, float camX, int sw) {
         float viewRight = camX + sw;
         List<RectF> candidates = new ArrayList<>();
@@ -477,8 +446,6 @@ public class World {
         for (RectF platform : platforms) {
             boolean isBrick = platform.height() < 1.5f * u && platform.top < 8.5f * u;
 
-            // Brick di 30% layar sebelah kanan (atau tepat di luarnya), supaya batu
-            // tidak muncul terlalu dekat dengan pemain. Bukan area finis dan tidak dijaga musuh.
             boolean nearView = platform.right > camX + sw * 0.7f
                     && platform.right < viewRight + 12f * u;
 
@@ -503,7 +470,6 @@ public class World {
         return true;
     }
 
-    // Batu mulai di luar layar sebelah kanan, di atas tanah.
     private void spawnGroundRock(float u, float viewRight) {
         List<float[]> spots = new ArrayList<>();
 
@@ -533,12 +499,10 @@ public class World {
         rocks.add(new Rock(spot[0], spot[1], rockSpeed(u), u));
     }
 
-    // Diatur GameView sebelum level dibuat: true kalau kabut gelap sedang atau akan turun.
     public void setFlashlightChestWanted(boolean wanted) {
         flashlightChestWanted = wanted;
     }
 
-    // Kalau kabut gelap akan turun, level ini pasti punya satu peti berisi senter.
     private void ensureFlashlightChest(
             List<float[]> sections,
             List<RectF> bricks,
@@ -548,7 +512,6 @@ public class World {
             return;
         }
 
-        // Sudah ada peti biasa di level ini: jadikan peti senter.
         if (!treasures.isEmpty()) {
             treasures.get(0).reward = Treasure.FLASHLIGHT;
             return;
@@ -588,17 +551,12 @@ public class World {
         }
     }
 
-    // Peti harta: muncul sesuai jadwal level, dan posisinya bervariasi
-    // (di tanah, di atas brick, atau melayang). Jenis posisi yang sama
-    // dengan peti sebelumnya dihindari supaya tidak monoton.
     private void maybeSpawnTreasure(
             List<float[]> sections,
             List<RectF> bricks,
             float u,
             int round
     ) {
-        // Level yang sama dibangun ulang: peti tetap muncul,
-        // jadwal berikutnya tidak diubah lagi.
         boolean sameLevelAgain = round == currentTreasureLevel;
 
         if (!sameLevelAgain && round < nextTreasureLevel) {
@@ -633,7 +591,6 @@ public class World {
                 if (!sameLevelAgain) {
                     currentTreasureLevel = round;
 
-                    // Jarak ke peti berikutnya acak: 2, 3, atau 4 level.
                     nextTreasureLevel = round + TREASURE_GAP_MIN
                             + random.nextInt(TREASURE_GAP_MAX - TREASURE_GAP_MIN + 1);
                 }
@@ -643,7 +600,6 @@ public class World {
         }
     }
 
-    // Mencari posisi bebas untuk satu jenis penempatan. Null kalau tidak ketemu.
     private Treasure tryPlaceTreasure(
             int kind,
             List<float[]> sections,
@@ -656,7 +612,6 @@ public class World {
             if (kind == Treasure.PLACE_BRICK) {
                 RectF brick = bricks.get(random.nextInt(bricks.size()));
 
-                // Pijakan yang sudah dijaga musuh dilewati.
                 if (brickHasEnemy(brick, u)) {
                     continue;
                 }
@@ -668,7 +623,6 @@ public class World {
 
                 rect = new RectF(left, brick.top - u, left + 1.2f * u, brick.top);
 
-                // Koin di pijakan itu yang menghalangi peti dihapus.
                 RectF clear = new RectF(rect);
                 clear.inset(-0.2f * u, -0.2f * u);
 
@@ -684,8 +638,6 @@ public class World {
             float[] section = sections.get(random.nextInt(sections.size()));
             float x = section[0] + rand(1.5f, section[1] - 2.7f);
 
-            // Tanah: dasar peti di permukaan tanah (9). Udara: melayang di atas tanah,
-            // masih terjangkau dengan satu lompatan.
             float bottom = kind == Treasure.PLACE_GROUND
                     ? 9f
                     : rand(6.9f, 7.5f);
@@ -705,8 +657,6 @@ public class World {
         return null;
     }
 
-    // Peti di tanah / udara tidak boleh menumpuk dengan koin,
-    // dan peti di udara tidak boleh terlalu dekat dengan pijakan melayang.
     private boolean isTreasureSpotFree(RectF rect, int kind, float u) {
         RectF area = new RectF(rect);
         area.inset(-0.3f * u, -0.2f * u);
@@ -731,7 +681,6 @@ public class World {
         return true;
     }
 
-    // Apakah ada musuh yang berpatroli di atas pijakan brick ini?
     private boolean brickHasEnemy(RectF brick, float u) {
         for (Enemy enemy : enemies) {
             boolean sameX = enemy.rect.right > brick.left
@@ -747,7 +696,6 @@ public class World {
         return false;
     }
 
-    // Peti yang baru disentuh pemain dibuka. Mengembalikan peti itu (atau null).
     public Treasure openTreasure(RectF playerRect) {
         for (Treasure treasure : treasures) {
             if (!treasure.opened
@@ -763,7 +711,6 @@ public class World {
         return null;
     }
 
-    // Menambah skor/koin langsung (dipakai hadiah peti harta).
     public void addScore(int amount) {
         score += amount;
     }

@@ -46,7 +46,6 @@ public class GameView extends SurfaceView implements Runnable {
     private final SoundManager sounds;
     private final CharacterSelectScreen menu;
 
-    // Menghubungkan input layar dengan game thread.
     private final Object inputLock = new Object();
 
     private boolean left;
@@ -61,8 +60,6 @@ public class GameView extends SurfaceView implements Runnable {
 
     private int lives;
 
-    // Suara jatuh dibunyikan saat pemain mulai tenggelam ke jurang (bukan saat sudah di dasar layar).
-    // Tanah ada di y = 9 satuan, badan pemain setinggi 1. Angka lebih kecil = suara lebih awal.
     private static final float FALL_SOUND_Y = 8.6f;
     private boolean fallSoundPlayed;
     private int round;
@@ -71,31 +68,28 @@ public class GameView extends SurfaceView implements Runnable {
     private float camX;
     private float speedMultiplier = 1f;
 
-    // ---- Treasure (peti harta) ----
-    private static final int MAX_LIVES = 3;               // batas nyawa (sama dengan 3 hati di HUD)
-    // Speed treasure = mode dash: 5 detik tanpa jurang, musuh, dan batu; kecepatan terus naik.
-    private static final float DASH_SECONDS = 5f;        // lama mode dash
-    private static final float DASH_START_MULT = 1.5f;   // kecepatan awal dash
-    private static final float DASH_MAX_MULT = 2.5f;     // kecepatan maksimal dash
-    private static final float DASH_ACCEL = 0.2f;        // tambahan kecepatan per detik saat dash
-    private static final float DASH_GRACE_SECONDS = 1f;  // kebal sebentar setelah dash selesai
-    private static final int COIN_REWARD = 100;           // koin dari coin treasure
-    private static final long TOAST_NS = 2_600_000_000L;  // lama tampilan "kamu dapat ..."
+    private static final int MAX_LIVES = 3;
+    private static final float DASH_SECONDS = 5f;
+    private static final float DASH_START_MULT = 1.5f;
+    private static final float DASH_MAX_MULT = 2.5f;
+    private static final float DASH_ACCEL = 0.2f;
+    private static final float DASH_GRACE_SECONDS = 1f;
+    private static final int COIN_REWARD = 100;
+    private static final long TOAST_NS = 2_600_000_000L;
 
     private final java.util.Random treasureRandom = new java.util.Random();
-    private float dashTimeLeft;          // sisa detik dash (0 = tidak dash)
+    private float dashTimeLeft;
     private float dashMult = DASH_START_MULT;
-    private float graceLeft;             // sisa detik kebal setelah dash
-    private boolean virtualGround;       // tanah lurus pengganti jurang (aktif saat dash)
+    private float graceLeft;
+    private boolean virtualGround;
     private boolean hasFlashlight;
-    private int playerFacing = 1;  // arah hadap pemain: 1 kanan, -1 kiri
+    private int playerFacing = 1;
     private Bitmap flashlightBmp;
     private int toastType = -1;
     private long toastStartNs;
     private String toastMain = "";
     private String toastSub = "";
 
-    // Layar loading + pemuatan gambar di thread terpisah.
     private final LoadingScreen loadingScreen;
     private Thread loaderThread;
     private volatile boolean assetsLoaded;
@@ -137,7 +131,6 @@ public class GameView extends SurfaceView implements Runnable {
         }
     }
 
-    // Permainan baru: skor, nyawa, dan putaran direset.
     private void startNewGame() {
         world.resetScore();
         rain.reset();
@@ -152,14 +145,10 @@ public class GameView extends SurfaceView implements Runnable {
 
         state = PLAYING;
 
-        // Musik latar mulai saat permainan dimulai.
         sounds.startMusic();
     }
 
-    // Putaran baru: skor dan nyawa tidak direset.
     private void buildRound() {
-        // World membuat susunan baru berdasarkan nomor putaran.
-        // Kecepatan musuh juga diatur oleh World.
         world.setFlashlightChestWanted(rain.wantsFlashlight() && !hasFlashlight);
         world.buildLevel(u, round);
 
@@ -174,7 +163,6 @@ public class GameView extends SurfaceView implements Runnable {
         player.reset(u);
         player.setSpeedMultiplier(1f);
 
-        // Dash selalu berhenti saat pemain diulang dari awal / ganti putaran.
         dashTimeLeft = 0f;
         dashMult = DASH_START_MULT;
         graceLeft = 0f;
@@ -188,7 +176,6 @@ public class GameView extends SurfaceView implements Runnable {
     private void nextRound() {
         round++;
 
-        // Kecepatan naik 10% dari kecepatan dasar setiap putaran.
         speedMultiplier = 1f + (round - 1) * 0.08f;
 
         assets.setBackgroundByRound(round);
@@ -202,7 +189,6 @@ public class GameView extends SurfaceView implements Runnable {
         try {
             runLoop();
         } catch (Throwable t) {
-            // Tampilkan error di layar supaya tidak hanya hitam.
             Log.e(TAG, "Game thread crash", t);
             errorText = t.toString();
             showErrorForever();
@@ -225,7 +211,13 @@ public class GameView extends SurfaceView implements Runnable {
                 sleepQuiet(5);
                 continue;
             }
-
+            if (levelBuilt && getWidth() > 0 && getHeight() > 0
+                    && (getWidth() != sw || getHeight() != sh)) {
+                levelBuilt = false;
+                loaderThread = null;
+                assetsLoaded = false;
+                state = SELECT_CHARACTER;
+            }
             if (!levelBuilt) {
                 if (loaderThread == null) {
                     sw = getWidth();
@@ -239,8 +231,6 @@ public class GameView extends SurfaceView implements Runnable {
 
                     u = sh / 12f;
 
-                    // Mulai layar loading, lalu muat gambar di thread terpisah
-                    // supaya animasi loading tetap berjalan mulus.
                     loadingScreen.begin(sw, sh, u);
 
                     loaderThread = new Thread(new Runnable() {
@@ -310,7 +300,6 @@ public class GameView extends SurfaceView implements Runnable {
                 }
             }
 
-            // Setelah game over, kembali ke layar pilih karakter.
             if (restartRequested) {
                 restartRequested = false;
                 clearInput();
@@ -318,7 +307,6 @@ public class GameView extends SurfaceView implements Runnable {
             }
 
             if (state == PLAYING) {
-                // Langkah kecil untuk menjaga ketelitian tabrakan.
                 float stepScale = Math.max(
                         speedMultiplier,
                         dashTimeLeft > 0f ? dashMult : 1f
@@ -344,20 +332,19 @@ public class GameView extends SurfaceView implements Runnable {
                 }
             }
             if (state != SELECT_CHARACTER) {
-                rain.update(dt, hasFlashlight, playerFacing); // atur cuaca, senter, dan arah sorotan
-                sounds.setRainVolume(rain.getIntensity()); // suara hujan mengikuti kekuatan hujan
+                rain.update(dt, hasFlashlight, playerFacing);
+                sounds.setRainVolume(rain.getIntensity());
 
                 if (rain.consumeDarkFogEnded()) {
-                    hasFlashlight = false; // kabut gelap reda, senter hilang
+                    hasFlashlight = false;
                 }
             } else {
-                sounds.setRainVolume(0f); // di menu pilih karakter tidak ada suara hujan
+                sounds.setRainVolume(0f);
             }
             draw();
         }
     }
 
-    // Menggambar satu frame layar loading.
     private void drawLoadingFrame() {
         Canvas c = holder.lockCanvas();
 
@@ -372,7 +359,6 @@ public class GameView extends SurfaceView implements Runnable {
         }
     }
 
-    // Menampilkan pesan error di layar sampai app ditutup.
     private void showErrorForever() {
         while (running) {
             if (holder.getSurface().isValid()) {
@@ -408,12 +394,10 @@ public class GameView extends SurfaceView implements Runnable {
         }
     }
 
-    // True berarti terjadi perpindahan putaran atau kehilangan nyawa.
     private boolean update(float dt) {
         int direction;
         boolean jump;
 
-        // Timer dash: kecepatan naik terus selama dash, lalu kembali normal.
         if (dashTimeLeft > 0f) {
             dashTimeLeft -= dt;
             dashMult = Math.min(DASH_MAX_MULT, dashMult + DASH_ACCEL * dt);
@@ -440,11 +424,10 @@ public class GameView extends SurfaceView implements Runnable {
 
         player.setDirection(direction);
         if (direction != 0) {
-            playerFacing = direction; // arah sorotan senter mengikuti arah hadap pemain
+            playerFacing = direction;
         }
 
         if (jump) {
-            // Suara lompat hanya bila lompat benar-benar terjadi (pemain di tanah).
             if (player.onGround) {
                 sounds.playJump();
             }
@@ -456,8 +439,6 @@ public class GameView extends SurfaceView implements Runnable {
 
         player.update(dt, u, world.platforms);
 
-        // Tanah lurus pengganti jurang selama dash. Setelah dash selesai tanah ini
-        // baru hilang kalau pemain sudah berdiri di tanah/platform asli (tidak jatuh di tengah jurang).
         if (virtualGround) {
             float groundTop = 9f * u;
 
@@ -473,18 +454,15 @@ public class GameView extends SurfaceView implements Runnable {
 
         RectF p = player.getHitbox(u);
 
-        // Pemain sudah lewat tepi tanah dan pasti jatuh: bunyikan suara sekarang.
         if (!fallSoundPlayed && !player.onGround && player.vy > 0
                 && player.y > FALL_SOUND_Y * u) {
             fallSoundPlayed = true;
 
-            // Selalu jatuh.mp3 (termasuk di nyawa terakhir).
-            // Kalau nyawa terakhir, jatuh2.mp3 menyusul di finishGame().
             sounds.playFall();
         }
 
         if (player.hasFallen(u)) {
-            loseLife(true);   // true = jatuh ke jurang
+            loseLife(true);
             return true;
         }
 
@@ -495,20 +473,17 @@ public class GameView extends SurfaceView implements Runnable {
             sounds.playCoin();
         }
 
-        // Peti harta: disentuh = terbuka, hadiah diacak (heart / speed / coin).
         Treasure openedTreasure = world.openTreasure(p);
 
         if (openedTreasure != null) {
             giveTreasureReward(openedTreasure);
         }
 
-        // Saat dash musuh dan batu "tidak ada": tidak bergerak, tidak muncul, tidak menabrak.
         if (!dashing) {
             world.updateEnemies(dt, u);
             world.updateRocks(dt, u, camX, sw);
         }
 
-        // Injak dari atas: musuh hilang dan pemain memantul.
         Enemy stomped = dashing ? null : world.stompEnemy(
                 p,
                 previousBottom,
@@ -525,18 +500,16 @@ public class GameView extends SurfaceView implements Runnable {
             p = player.getHitbox(u);
         }
 
-        // Tabrak samping atau bawah: nyawa berkurang.
         boolean safe = dashing || graceLeft > 0f;
 
         if (!safe && world.hitsEnemy(p)) {
-            loseLife(false);  // false = kena musuh
+            loseLife(false);
             return true;
         }
         if (!safe && world.hitsRock(p, u)) {
             loseLife(false);
             return true;
         }
-        // Bendera langsung memulai putaran berikutnya.
         if (RectF.intersects(p, world.goal)) {
             nextRound();
             return true;
@@ -547,7 +520,6 @@ public class GameView extends SurfaceView implements Runnable {
         return false;
     }
 
-    // Hadiah peti diacak. Heart dilewati kalau nyawa sudah penuh supaya tidak ada hadiah yang sia-sia.
     private void giveTreasureReward(Treasure treasure) {
         if (treasure.reward == Treasure.FLASHLIGHT
                 && !hasFlashlight
@@ -602,11 +574,10 @@ public class GameView extends SurfaceView implements Runnable {
         sounds.playCoin();
     }
 
-    // Mulai (atau perpanjang) mode dash dari speed treasure.
     private void startDash() {
         if (dashTimeLeft <= 0f) {
             dashMult = DASH_START_MULT;
-            world.clearRocks();   // batu yang sudah ada hilang, tidak muncul tiba-tiba setelah dash
+            world.clearRocks();
         }
 
         dashTimeLeft = DASH_SECONDS;
@@ -623,8 +594,6 @@ public class GameView extends SurfaceView implements Runnable {
             lives = 0;
             finishGame(fell);
         } else {
-            // Skor, putaran, dan kecepatan tetap.
-            // Koin yang diambil dan musuh yang kalah tetap hilang.
             resetPlayer();
         }
     }
@@ -640,15 +609,12 @@ public class GameView extends SurfaceView implements Runnable {
                     .apply();
         }
 
-        // Musik latar berhenti.
         sounds.stopMusic();
 
         if (fell) {
-            // Urutan: jatuh.mp3 (sudah bunyi saat jatuh) -> jatuh2.mp3 -> game over.
             sounds.playFallFinal();
             sounds.playGameOverAfterFall();
         } else {
-            // Kena musuh di nyawa terakhir: langsung suara game over.
             sounds.playGameOver();
         }
 
@@ -671,43 +637,35 @@ public class GameView extends SurfaceView implements Runnable {
 
             c.drawColor(Color.rgb(135, 206, 235));
 
-            // Background
             assets.drawBackground(c, sw, sh, camX);
 
             c.save();
             c.translate(-camX, 0);
 
-            // Tanah dan platform.
             for (RectF platform : world.platforms) {
                 assets.drawPlatform(c, platform, u);
             }
 
-            // Saat dash jurang tertutup tanah lurus.
             if (virtualGround) {
                 drawDashGround(c);
             }
 
-            // Koin.
             for (RectF coin : world.coins) {
                 assets.drawCoin(c, coin);
             }
 
-            // Peti harta (tertutup sampai disentuh).
             for (Treasure treasure : world.treasures) {
                 assets.drawTreasure(c, treasure, u);
             }
 
-            // Musuh.
             if (dashTimeLeft <= 0f) {
                 for (Enemy enemy : world.enemies) {
                     assets.drawEnemy(c, enemy);
                 }
-                //Batu
                 for (Rock rock : world.rocks) {
                     assets.drawRock(c, rock);
                 }
             }
-            // Bendera.
             if (assets.flagBmp != null) {
                 float flagHeight = 2.5f * u;
 
@@ -734,12 +692,11 @@ public class GameView extends SurfaceView implements Runnable {
                 c.drawBitmap(assets.flagBmp, null, flagDst, paint);
             }
 
-            // Pemain.
             assets.drawPlayer(c, player);
 
             c.restore();
 
-            RectF playerBox = player.getHitbox(u); // pusat lingkaran pandang saat kabut gelap
+            RectF playerBox = player.getHitbox(u);
             rain.draw(c, camX, world.platforms, playerBox.centerX() - camX, playerBox.centerY());
 
             drawHud(c);
@@ -755,7 +712,6 @@ public class GameView extends SurfaceView implements Runnable {
         }
     }
 
-    // Menutup semua celah jurang yang terlihat di layar dengan potongan tanah.
     private void drawDashGround(Canvas c) {
         float groundTop = 9f * u;
         float viewLeft = camX - u;
@@ -787,7 +743,6 @@ public class GameView extends SurfaceView implements Runnable {
         }
     }
 
-    // Bar sisa waktu dash di tengah atas layar.
     private void drawDashBar(Canvas c) {
         if (dashTimeLeft <= 0f) {
             return;
@@ -819,7 +774,6 @@ public class GameView extends SurfaceView implements Runnable {
     private void drawHud(Canvas c) {
         float y = u * 0.15f;
 
-        // Ikon koin.
         RectF coinIcon = new RectF(
                 u * 0.35f,
                 y,
@@ -829,7 +783,6 @@ public class GameView extends SurfaceView implements Runnable {
 
         assets.drawCoinIcon(c, coinIcon);
 
-        // Jumlah koin.
         paint.setColor(Color.WHITE);
         paint.setTextSize(u * 0.48f);
         paint.setTextAlign(Paint.Align.LEFT);
@@ -842,7 +795,6 @@ public class GameView extends SurfaceView implements Runnable {
                 paint
         );
 
-        // Ikon hati.
         Bitmap heart;
 
         if (lives >= 3) {
@@ -864,13 +816,11 @@ public class GameView extends SurfaceView implements Runnable {
             c.drawBitmap(heart, null, heartRect, paint);
         }
 
-        // Badge level di sebelah kanan hati.
         drawLevelBadge(c);
         if (hasFlashlight) {
             drawFlashlightBadge(c);
         }
     }
-    // Lencana kecil di HUD selama senter aktif.
     private void drawFlashlightBadge(Canvas c) {
         float x = u * 8.1f;
         float y = u * 0.15f;
@@ -899,7 +849,7 @@ public class GameView extends SurfaceView implements Runnable {
                 y + (h + iconSize) / 2f
         );
 
-        assets.drawFlashlightIcon(c, iconRect); // senter polos, lebih jelas di HUD
+        assets.drawFlashlightIcon(c, iconRect);
 
         paint.setColor(Color.WHITE);
         paint.setTextAlign(Paint.Align.CENTER);
@@ -924,8 +874,6 @@ public class GameView extends SurfaceView implements Runnable {
                 y + h
         );
 
-        // Background badge.
-        // Background warna kayu.
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(Color.rgb(139, 90, 43));
 
@@ -936,7 +884,6 @@ public class GameView extends SurfaceView implements Runnable {
                 paint
         );
 
-        // Border cokelat tua.
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(u * 0.045f);
         paint.setColor(Color.rgb(85, 50, 25));
@@ -950,7 +897,6 @@ public class GameView extends SurfaceView implements Runnable {
 
         paint.setStyle(Paint.Style.FILL);
 
-        // Gambar medali berukuran kecil.
         Bitmap badgeBitmap = assets.getLevelBadge(round);
 
         if (badgeBitmap != null) {
@@ -971,7 +917,6 @@ public class GameView extends SurfaceView implements Runnable {
             );
         }
 
-        // Tulisan level.
         paint.setColor(Color.WHITE);
         paint.setTextAlign(Paint.Align.CENTER);
         paint.setTextSize(u * 0.30f);
@@ -987,7 +932,6 @@ public class GameView extends SurfaceView implements Runnable {
         paint.setTextAlign(Paint.Align.LEFT);
     }
 
-    // Teks berwarna dengan garis tepi gelap supaya mudah dibaca.
     private void drawOutlinedText(
             Canvas c,
             String text,
@@ -1012,7 +956,6 @@ public class GameView extends SurfaceView implements Runnable {
         c.drawText(text, x, y, paint);
     }
 
-    // Setelah membuka peti: tampilkan peti terbuka berisi hadiahnya + keterangan.
     private void drawTreasureToast(Canvas c) {
         if (toastType < 0) {
             return;
@@ -1028,13 +971,11 @@ public class GameView extends SurfaceView implements Runnable {
         float sec = elapsed / 1_000_000_000f;
         float total = TOAST_NS / 1_000_000_000f;
 
-        // Muncul cepat, memudar di akhir.
         float fadeIn = Math.min(1f, sec / 0.18f);
         float fadeOut = Math.min(1f, (total - sec) / 0.45f);
         float fade = Math.max(0f, Math.min(fadeIn, fadeOut));
         int alpha = Math.round(255f * fade);
 
-        // Sedikit membesar saat muncul.
         float pop = sec < 0.3f ? 1f - sec / 0.3f : 0f;
         float scale = 0.8f + 0.2f * fadeIn + 0.06f * pop;
 
@@ -1053,7 +994,6 @@ public class GameView extends SurfaceView implements Runnable {
         c.save();
         c.scale(scale, scale, cx, panel.centerY());
 
-        // Papan kayu (warna sama dengan badge level).
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(Color.argb(Math.round(alpha * 0.93f), 139, 90, 43));
         c.drawRoundRect(panel, 0.25f * u, 0.25f * u, paint);
@@ -1065,7 +1005,6 @@ public class GameView extends SurfaceView implements Runnable {
 
         paint.setStyle(Paint.Style.FILL);
 
-        // Peti terbuka di kiri, sedikit menonjol ke atas panel.
         RectF iconBox = new RectF(
                 panel.left + 0.25f * u,
                 panel.bottom - 0.1f * u - 2.5f * u,
@@ -1075,7 +1014,6 @@ public class GameView extends SurfaceView implements Runnable {
 
         assets.drawTreasureIcon(c, toastType, iconBox, alpha);
 
-        // Teks di kanan peti.
         float textX = iconBox.right + 0.3f * u;
         float textMaxW = panel.right - 0.25f * u - textX;
 
@@ -1092,7 +1030,6 @@ public class GameView extends SurfaceView implements Runnable {
         paint.setTextAlign(Paint.Align.LEFT);
         paint.setTypeface(Typeface.DEFAULT_BOLD);
 
-        // Judul kecil.
         paint.setTextSize(u * 0.32f);
         drawOutlinedText(
                 c,
@@ -1103,7 +1040,6 @@ public class GameView extends SurfaceView implements Runnable {
                 alpha
         );
 
-        // Hadiah (diperkecil otomatis kalau terlalu lebar).
         float mainSize = u * 0.62f;
         paint.setTextSize(mainSize);
 
@@ -1123,7 +1059,6 @@ public class GameView extends SurfaceView implements Runnable {
                 alpha
         );
 
-        // Keterangan.
         paint.setTextSize(u * 0.34f);
 
         float subWidth = paint.measureText(toastSub);
@@ -1254,7 +1189,6 @@ public class GameView extends SurfaceView implements Runnable {
 
         paint.setStyle(Paint.Style.FILL);
 
-        // Gambar GAME OVER.
         float bannerWidth = Math.min(panelWidth * 0.75f, 5.5f * u);
         float bannerHeight = 1.5f * u;
 
@@ -1288,14 +1222,12 @@ public class GameView extends SurfaceView implements Runnable {
             paint.setFakeBoldText(false);
         }
 
-        // Badge level terakhir.
         drawGameOverLevelBadge(
                 c,
                 sw / 2f,
                 panelTop + 2.05f * u
         );
 
-        // Total koin.
         float coinSize = 0.85f * u;
         float coinY = panelTop + 3.65f * u;
 
@@ -1331,7 +1263,6 @@ public class GameView extends SurfaceView implements Runnable {
                 paint
         );
 
-        // Highest score.
         float highY = panelTop + 5.35f * u;
 
         paint.setColor(Color.WHITE);
@@ -1355,7 +1286,6 @@ public class GameView extends SurfaceView implements Runnable {
                 paint
         );
 
-        // Tombol retry.
         float retryWidth = 2.8f * u;
         float retryHeight = 1.15f * u;
 

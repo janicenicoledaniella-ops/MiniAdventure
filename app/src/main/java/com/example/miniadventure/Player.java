@@ -1,4 +1,3 @@
-
 package com.example.miniadventure;
 
 import android.graphics.RectF;
@@ -77,7 +76,6 @@ public class Player {
         float previousY = y;
         float previousBottom = y + h;
 
-        // Tabrakan horizontal.
         float targetX = x + vx * dt;
 
         for (RectF platform : platforms) {
@@ -89,7 +87,6 @@ public class Player {
                 continue;
             }
 
-            // Menghalangi pemain dari sisi kiri.
             if (vx > 0 &&
                     x + w <= platform.left &&
                     targetX + w > platform.left) {
@@ -97,7 +94,6 @@ public class Player {
                 targetX = platform.left - w;
             }
 
-            // Menghalangi pemain dari sisi kanan.
             else if (vx < 0 &&
                     x >= platform.right &&
                     targetX < platform.right) {
@@ -108,7 +104,6 @@ public class Player {
 
         x = Math.max(0, targetX);
 
-        // Gravitasi dan gerakan vertikal.
         vy += GRAVITY * unit * dt;
         y += vy * dt;
 
@@ -126,7 +121,6 @@ public class Player {
                 continue;
             }
 
-            // Mendarat di atas platform.
             if (vy >= 0 &&
                     previousBottom <= platform.top &&
                     currentBottom >= platform.top) {
@@ -136,7 +130,6 @@ public class Player {
                 onGround = true;
             }
 
-            // Kepala menyentuh bagian bawah platform.
             else if (vy < 0 &&
                     previousY >= platform.bottom &&
                     currentTop <= platform.bottom) {

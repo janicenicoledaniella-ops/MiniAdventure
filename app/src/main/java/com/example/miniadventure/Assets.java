@@ -1,5 +1,3 @@
-// ground.png punya area transparan di atasnya, jadi kita pakai gambar
-// yang sudah dipotong dari bagian bawah agar menempel ke tanah.
 package com.example.miniadventure;
 
 import android.content.Context;
@@ -43,7 +41,6 @@ public class Assets {
     private Bitmap groundBmp;
     private Bitmap playerBmp;
 
-    // Peti harta: tertutup, dan tiga versi terbuka sesuai isinya.
     private Bitmap treasureClosedBmp;
     private Bitmap treasureHeartBmp;
     private Bitmap treasureSpeedBmp;
@@ -53,7 +50,6 @@ public class Assets {
     private final Paint treasurePaint =
             new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
 
-    // Karakter yang bisa dipilih: 0 = girl 1, 1 = boy 1, 2 = girl 2, 3 = boy 2, 4 = robot.
     private static final int[] CHAR_RES = {
             R.drawable.chara_girl1,
             R.drawable.chara_boy1,
@@ -63,31 +59,20 @@ public class Assets {
     };
     public static final String[] CHAR_NAMES = {"Ryka", "Kairo", "Aveline", "Jax", "Vex-9"};
 
-    // Pengali tinggi tiap karakter (1.0 = tinggi standar), urutannya sama dengan CHAR_RES.
-    // Semua 1f = semua karakter sama tinggi. Naikkan angkanya kalau mau salah satu lebih tinggi.
     private static final float[] CHAR_SCALE = {1f, 1f, 1f, 1f, 1f};
 
-    private final Bitmap[] charGameBmp = new Bitmap[CHAR_RES.length];     // ukuran di dalam game
-    private final Bitmap[] charPreviewBmp = new Bitmap[CHAR_RES.length];  // ukuran di layar pilih karakter
+    private final Bitmap[] charGameBmp = new Bitmap[CHAR_RES.length];
+    private final Bitmap[] charPreviewBmp = new Bitmap[CHAR_RES.length];
     private boolean facingLeft = false;
 
-    // ---- Animasi sprite ----
-    // Gambar dicari lewat NAMA di res/drawable, dengan pola:
-    //   <prefix>_stand
-    //   <prefix>_run1 ... <prefix>_run<runCount>
-    //   <prefix>_jump1 ... <prefix>_jump<jumpCount>   (frame terakhir = pose mendarat)
-    // Frame perantara (opsional, bikin lebih halus):
-    //   <prefix>_run<i>_mid   = antara run i dan run i+1 (run terakhir -> run1)
-    //   <prefix>_jump<i>_mid  = antara jump i dan jump i+1 (hanya untuk frame udara)
-    // Karakter yang tidak punya AnimSet (null) memakai gambar statis.
     private static class AnimSet {
         final String prefix;
         final int runCount, jumpCount;
-        final float scale;          // pengali ukuran (1.0 = 1.2 kotak tinggi)
-        final float runCycleUnits;  // jarak lari untuk satu putaran penuh animasi (makin besar = makin lambat)
-        final float runBlend;       // porsi akhir tiap frame lari yang di-crossfade (0..1)
-        boolean useRunMids = true;  // false = abaikan file <prefix>_run<i>_mid (hasil interpolasi kurang bersih)
-        boolean crossfade = true;   // khusus lompat: false = ganti frame langsung (tidak ada efek "double")
+        final float scale;
+        final float runCycleUnits;
+        final float runBlend;
+        boolean useRunMids = true;
+        boolean crossfade = true;
         Bitmap[] bStand, bRun, bJump;
 
         AnimSet(String prefix, int runCount, int jumpCount,
@@ -122,34 +107,33 @@ public class Assets {
         }
     }
 
-    // Urutan sama dengan CHAR_RES: 0 = Ryka, 1 = Kairo, 2 = Aveline, 3 = Jax, 4 = Vex-9.
     private final AnimSet[] animSets = {
-            new AnimSet("ryka", 4, 5, 2.4f, 2.4f, 0.4f),   // Ryka
-            new AnimSet("kairo", 5, 5, 2.4f, 2.2f, 0.4f, false).noRunMids(),  // Kairo
-            new AnimSet("aveline", 5, 5, 2.4f, 1.8f, false),// Aveline
-            new AnimSet("jax", 5, 5, 2.4f, 2.0f, 0.5f, false),   // Jax
-            new AnimSet("vex", 5, 5, 2.4f, 2.8f, 0.5f)      // Vex-9
+            new AnimSet("ryka", 4, 5, 2.4f, 2.4f, 0.4f),
+            new AnimSet("kairo", 5, 5, 2.4f, 2.2f, 0.4f, false).noRunMids(),
+            new AnimSet("aveline", 5, 5, 2.4f, 1.8f, false),
+            new AnimSet("jax", 5, 5, 2.4f, 2.0f, 0.5f, false),
+            new AnimSet("vex", 5, 5, 2.4f, 2.8f, 0.5f)
     };
 
-    private static final long LAND_MS = 0;             // lama efek jongkok saat mendarat (0 = matikan)
-    private static final float FOOT_SINK_UNITS = 0.02f; // koreksi kecil: ruang kosong di bawah kaki pada sprite
-    private static final float GROUND_TOP_UNITS = 9f;   // tinggi permukaan tanah di World (9 * unit)
-    private static final float GRASS_SINK_UNITS = 0.28f;// kaki turun ke rumput saat berdiri di tanah
+    private static final long LAND_MS = 0;
+    private static final float FOOT_SINK_UNITS = 0.02f;
+    private static final float GROUND_TOP_UNITS = 9f;
+    private static final float GRASS_SINK_UNITS = 0.28f;
 
     private int currentChar = 0;
     private float unitPx = 1f;
 
     private final Paint blendPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-    private Bitmap frameA, frameB;     // frameB digambar di atas frameA dengan alpha
+    private Bitmap frameA, frameB;
     private int frameBAlpha;
-    private float landAmount;          // 0..1, kuat tepat setelah mendarat (untuk efek gepeng)
-    private float tiltCur, stretchXCur = 1f, stretchYCur = 1f;   // gerak tambahan yang dihaluskan
-    private float runBob;   // naik-turun badan saat lari (satuan unit), bikin langkah terasa hidup
+    private float landAmount;
+    private float tiltCur, stretchXCur = 1f, stretchYCur = 1f;
+    private float runBob;
     private boolean wasOnGround = true;
     private long landStartMs = -1000;
-    private float sinkCur = 0f;        // turun-naik kaki yang dihaluskan
+    private float sinkCur = 0f;
     private long lastDrawMs = 0;
-    private int previewBaseH = 0;  // tinggi preview standar (pengali 1.0), dipakai untuk menyejajarkan kaki
+    private int previewBaseH = 0;
 
     public Assets(Context context) {
         this.context = context;
@@ -266,9 +250,13 @@ public class Assets {
         );
 
 
+        BitmapFactory.Options groundOpts = new BitmapFactory.Options();
+        groundOpts.inScaled = false;
+
         Bitmap originalGround = BitmapFactory.decodeResource(
                 context.getResources(),
-                R.drawable.ground
+                R.drawable.ground,
+                groundOpts
         );
 
         if (originalGround != null) {
@@ -302,7 +290,6 @@ public class Assets {
         );
     }
 
-    // Gambar peti yang sudah terbuka sesuai isinya.
     private Bitmap getTreasureOpenedBitmap(int type) {
         switch (type) {
             case Treasure.HEART:
@@ -330,7 +317,6 @@ public class Assets {
         }
     }
 
-    // Memotong bitmap sampai batas piksel yang terlihat (alpha > 20).
     private Bitmap trimTransparent(Bitmap src) {
         int w = src.getWidth();
         int h = src.getHeight();
@@ -355,10 +341,6 @@ public class Assets {
         return Bitmap.createBitmap(src, minX, minY, maxX - minX + 1, maxY - minY + 1);
     }
 
-    // Sprite diperkecil supaya hemat memori.
-    // Memotong sampai area terlihat, lalu menghitung titik tengah massa horizontal
-    // (outCx[0], relatif ke tepi kiri hasil potongan). Garis kecepatan tipis tidak
-    // menggeser posisi karakter karena massanya kecil.
     private Bitmap trimWithCentroid(Bitmap src, float[] outCx) {
         int w = src.getWidth();
         int h = src.getHeight();
@@ -390,8 +372,6 @@ public class Assets {
         return Bitmap.createBitmap(src, minX, minY, maxX - minX + 1, maxY - minY + 1);
     }
 
-    // Setiap frame dipotong, disamakan tingginya, lalu diletakkan di kanvas berukuran
-    // sama (tengah di titik massa, kaki di dasar). Ukuran file gambar tidak berpengaruh.
     private Bitmap[] loadAnim(int[] resIds, int canvasW, int canvasH) {
         BitmapFactory.Options opts = new BitmapFactory.Options();
         opts.inScaled = false;
@@ -414,6 +394,7 @@ public class Assets {
 
             Bitmap frame = Bitmap.createBitmap(canvasW, canvasH, Bitmap.Config.ARGB_8888);
             Canvas cv = new Canvas(frame);
+            cv.setDensity(Bitmap.DENSITY_NONE);
             cv.drawBitmap(scaled, canvasW / 2f - cx[0] * k, 0f, null);
             out[i] = frame;
 
@@ -429,7 +410,6 @@ public class Assets {
         return context.getResources().getIdentifier(name, "drawable", context.getPackageName());
     }
 
-    // Daftar frame lari: run1, (run1_mid), run2, (run2_mid), ... ; _mid dipakai kalau ada.
     private int[] runIds(AnimSet set) {
         java.util.ArrayList<Integer> ids = new java.util.ArrayList<>();
         for (int i = 1; i <= set.runCount; i++) {
@@ -442,7 +422,6 @@ public class Assets {
         return toArray(ids);
     }
 
-    // Daftar frame lompat: jump1, (jump1_mid), jump2, ... , jump<N-1>, jump<N> (mendarat).
     private int[] jumpIds(AnimSet set) {
         java.util.ArrayList<Integer> ids = new java.util.ArrayList<>();
         for (int i = 1; i <= set.jumpCount; i++) {
@@ -463,7 +442,6 @@ public class Assets {
         return out;
     }
 
-    // Apakah semua gambar punya ukuran piksel yang sama (berarti sudah sejajar dalam kanvas)?
     private boolean allSameSize(int[]... groups) {
         BitmapFactory.Options o = new BitmapFactory.Options();
         o.inJustDecodeBounds = true;
@@ -482,7 +460,6 @@ public class Assets {
         return true;
     }
 
-    // Baris paling bawah yang berisi piksel terlihat (posisi kaki) pada sebuah gambar.
     private int footRow(int resId) {
         BitmapFactory.Options opts = new BitmapFactory.Options();
         opts.inScaled = false;
@@ -503,7 +480,6 @@ public class Assets {
         return h;
     }
 
-    // Tinggi siluet (piksel yang terlihat) pada sebuah gambar.
     private float silhouetteHeight(int resId) {
         BitmapFactory.Options opts = new BitmapFactory.Options();
         opts.inScaled = false;
@@ -529,8 +505,6 @@ public class Assets {
         return maxY < minY ? 0f : (maxY - minY + 1);
     }
 
-    // Untuk gambar yang sudah sejajar dalam kanvas sama: semua frame diperbesar dengan
-    // faktor yang sama, jadi ukuran dan posisi badan tidak berubah-ubah antar frame.
     private Bitmap[] loadAnimAligned(int[] resIds, float k, int cropH) {
         BitmapFactory.Options opts = new BitmapFactory.Options();
         opts.inScaled = false;
@@ -541,7 +515,6 @@ public class Assets {
                     context.getResources(), resIds[i], opts);
             if (raw == null) return null;
 
-            // Buang ruang kosong di bawah kaki supaya kaki pas menyentuh lantai.
             if (cropH > 0 && cropH < raw.getHeight()) {
                 Bitmap cut = Bitmap.createBitmap(raw, 0, 0, raw.getWidth(), cropH);
                 raw.recycle();
@@ -567,13 +540,12 @@ public class Assets {
             int standId = res(set.prefix + "_stand");
             int[] run = runIds(set);
             int[] jump = jumpIds(set);
-            if (standId == 0 || run == null || jump == null) continue;   // gambar kurang -> pakai statis
+            if (standId == 0 || run == null || jump == null) continue;
             int[] stand = {standId};
 
             float charH = u * 1.2f * CHAR_SCALE[i] * set.scale;
 
             if (allSameSize(stand, run, jump)) {
-                // Gambar sudah sejajar: satu faktor skala untuk semua frame.
                 float sil = silhouetteHeight(standId);
                 float k = sil > 0f ? charH / sil : 1f;
                 int foot = footRow(standId);
@@ -581,7 +553,6 @@ public class Assets {
                 set.bRun = loadAnimAligned(run, k, foot);
                 set.bJump = loadAnimAligned(jump, k, foot);
             } else {
-                // Ukuran gambar beda-beda (gambar mentah): dipotong dan disamakan tingginya.
                 int canvasH = Math.round(charH);
                 int canvasW = Math.round(canvasH * 1.2f);
                 set.bStand = loadAnim(stand, canvasW, canvasH);
@@ -602,8 +573,6 @@ public class Assets {
                     context.getResources(), CHAR_RES[i], opts);
             if (raw == null) continue;
 
-            // Buang ruang transparan di sekeliling karakter supaya semua karakter
-            // sama tinggi dan kakinya pas di lantai.
             Bitmap trimmed = trimTransparent(raw);
             if (trimmed != raw) {
                 raw.recycle();
@@ -634,8 +603,6 @@ public class Assets {
 
     private final Paint ghostPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
 
-    // Menggambar gambar karakter dengan opacity rendah (dipakai layar pilih karakter).
-    // feetY = posisi kaki, scale = skala dari ukuran preview, alpha = 0..255.
     public void drawCharacterGhost(Canvas c, int index, float cx, float feetY,
                                    float scale, int alpha) {
         if (index < 0 || index >= charPreviewBmp.length) return;
@@ -649,7 +616,6 @@ public class Assets {
         c.drawBitmap(b, null, new RectF(cx - w / 2f, feetY - h, cx + w / 2f, feetY), ghostPaint);
     }
 
-    // Lebar gambar karakter di layar pilih karakter (dalam piksel, skala 1).
     public float getCharacterPreviewWidth(int index) {
         if (index < 0 || index >= charPreviewBmp.length) return 0f;
         Bitmap b = charPreviewBmp[index];
@@ -660,8 +626,6 @@ public class Assets {
         Bitmap b = charPreviewBmp[index];
         if (b == null) return;
 
-        // 'top' adalah posisi atas untuk tinggi standar; karakter yang lebih tinggi
-        // naik ke atas supaya kakinya tetap di lantai.
         float y = top + (previewBaseH - b.getHeight());
         c.drawBitmap(b, cx - b.getWidth() / 2f, y, paint);
     }
@@ -702,7 +666,6 @@ public class Assets {
                 c.drawBitmap(bg, null, dst, paint);
             }
 
-            // Efek pencahayaan malam hanya untuk background.
             if (currentBgIndex == 2) {
                 paint.setColor(Color.argb(85, 8, 18, 55));
                 c.drawRect(0, 0, sw, sh, paint);
@@ -791,7 +754,6 @@ public class Assets {
         }
     }
 
-    // Peti harta di dalam level: tertutup sampai disentuh, lalu menampilkan isinya.
     public void drawTreasure(Canvas c, Treasure treasure, float u) {
         Bitmap bmp = treasure.opened
                 ? getTreasureOpenedBitmap(treasure.type)
@@ -808,16 +770,14 @@ public class Assets {
         float bottom = treasure.rect.bottom;
 
         if (treasure.place == Treasure.PLACE_GROUND) {
-            bottom += 0.12f * u;   // sedikit tenggelam ke rumput
+            bottom += 0.12f * u;
         } else if (treasure.place == Treasure.PLACE_BRICK) {
-            bottom += 0.05f * u;   // sedikit tenggelam ke brick
+            bottom += 0.05f * u;
         } else {
-            // Peti melayang: naik-turun pelan.
             double sec = System.nanoTime() / 1e9;
             bottom += (float) Math.sin(sec * 2.2) * 0.1f * u;
         }
 
-        // "Pop" kecil sesaat setelah dibuka.
         float pop = 0f;
 
         if (treasure.opened) {
@@ -844,8 +804,6 @@ public class Assets {
         c.restore();
     }
 
-    // Gambar peti terbuka (isi hadiah) untuk pemberitahuan di layar.
-    // Muat di dalam box, rata bawah dan tengah horizontal.
     public void drawTreasureIcon(Canvas c, int type, RectF box, int alpha) {
         Bitmap bmp = getTreasureOpenedBitmap(type);
 
@@ -872,7 +830,6 @@ public class Assets {
         c.drawBitmap(bmp, null, dst, treasurePaint);
         treasurePaint.setAlpha(255);
     }
-    // Gambar senter polos di tengah kotak, proporsional (untuk HUD).
     public void drawFlashlightIcon(Canvas c, RectF box) {
         if (flashlightBmp == null) {
             return;
@@ -945,7 +902,6 @@ public class Assets {
         return t * t * (3f - 2f * t);
     }
 
-    // Memilih frame (frameA, dan frameB untuk crossfade) sesuai kondisi pemain.
     private void pickPlayerFrame(Player p) {
         frameA = null;
         frameB = null;
@@ -956,7 +912,7 @@ public class Assets {
         AnimSet set = (currentChar >= 0 && currentChar < animSets.length)
                 ? animSets[currentChar] : null;
         if (set == null || !set.ready()) {
-            frameA = playerBmp;   // karakter tanpa animasi tetap gambar statis
+            frameA = playerBmp;
             return;
         }
 
@@ -965,10 +921,7 @@ public class Assets {
         if (!p.onGround) {
             wasOnGround = false;
 
-            // v: kecepatan vertikal (unit/detik), negatif = naik.
             float v = p.vy / unitPx;
-            // Petakan v ke posisi kontinu 0..3 (naik cepat -> puncak -> turun cepat),
-            // lalu sebar ke semua frame udara. Frame terakhir = pose mendarat, tidak dipakai di sini.
             float pos;
             if (v <= -12f) pos = 0f;
             else if (v <= -5f) pos = (v + 12f) / 7f;
@@ -976,10 +929,9 @@ public class Assets {
             else if (v <= 6f) pos = 2f + v / 6f;
             else pos = 3f;
 
-            int air = set.bJump.length - 1;          // jumlah frame udara
+            int air = set.bJump.length - 1;
             float posN = pos / 3f * (air - 1);
             if (!set.crossfade) {
-                // Ganti frame langsung ke frame terdekat: tidak ada gambar dobel.
                 frameA = set.bJump[Math.max(0, Math.min(air - 1, Math.round(posN)))];
                 return;
             }
@@ -991,7 +943,6 @@ public class Assets {
             return;
         }
 
-        // Baru saja mendarat: mulai hitung efek jongkok.
         if (!wasOnGround) {
             wasOnGround = true;
             landStartMs = now;
@@ -1003,7 +954,6 @@ public class Assets {
             float f = ph - i;
             int n = set.bRun.length;
             frameA = set.bRun[Math.floorMod(i, n)];
-            // Dua hentakan langkah per siklus lari.
             runBob = Math.abs((float) Math.sin(ph / n * 2.0 * Math.PI)) * 0.05f;
 
             float start = 1f - set.runBlend;
@@ -1015,7 +965,6 @@ public class Assets {
             frameA = set.bStand[0];
         }
 
-        // Efek mendarat: jongkok (jump5) memudar ke pose normal.
         float land = LAND_MS > 0 ? 1f - (now - landStartMs) / (float) LAND_MS : 0f;
         if (land > 0f) {
             landAmount = Math.min(1f, land);
@@ -1032,8 +981,6 @@ public class Assets {
             else if (p.vx > 0) facingLeft = false;
 
             float cx = p.x + p.w / 2f;
-            // Tepi atas rumput pada gambar tanah ada sedikit di bawah garis lantai fisik,
-            // jadi saat berdiri di tanah kaki diturunkan; di platform bata tidak.
             float feetY = p.y + p.h;
             float target = 0f;
             if (p.onGround && Math.abs(feetY - GROUND_TOP_UNITS * unitPx) < 0.05f * unitPx) {
@@ -1046,8 +993,6 @@ public class Assets {
 
             float bottom = feetY + sinkCur + unitPx * FOOT_SINK_UNITS - runBob * unitPx;
 
-            // Gerak tambahan yang halus (miring badan, melar/gepeng) supaya sprite yang
-            // frame-nya sedikit tetap terasa mengalir. Hanya untuk karakter sprite baru.
             AnimSet set = (currentChar >= 0 && currentChar < animSets.length)
                     ? animSets[currentChar] : null;
             boolean smoothMotion = set != null && set.ready() && !set.crossfade;
@@ -1056,14 +1001,13 @@ public class Assets {
             if (smoothMotion) {
                 float v = p.vy / unitPx;
                 if (!p.onGround) {
-                    // Saat lompat badan tidak dimiringkan; hanya melar sesuai kecepatan.
                     float s = Math.min(Math.abs(v), 14f) * 0.004f;
                     syT = 1f + s;
                     sxT = 1f - s * 0.6f;
                 } else {
-                    if (p.vx != 0f) tiltT = 3f + runBob * 40f;   // condong ke depan saat lari
+                    if (p.vx != 0f) tiltT = 3f + runBob * 40f;
                     float sq = smooth(landAmount);
-                    syT = 1f - 0.07f * sq;                        // gepeng saat mendarat
+                    syT = 1f - 0.07f * sq;
                     sxT = 1f + 0.05f * sq;
                 }
             }

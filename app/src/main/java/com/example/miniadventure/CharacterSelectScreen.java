@@ -11,10 +11,6 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
 
-/**
- * Layar pilih karakter: tanpa gambar background, semuanya digambar lewat kode.
- * Panah kiri/kanan untuk ganti karakter, tombol START GAME untuk mulai.
- */
 public class CharacterSelectScreen {
 
     public static final int COUNT = 5;
@@ -22,17 +18,15 @@ public class CharacterSelectScreen {
     private static final long POP_NS = 300_000_000L;
     private static final long FLASH_NS = 220_000_000L;
 
-    // Posisi vertikal (dalam satuan u = tinggi layar / 12).
     private static final float TITLE_Y = 1.75f;
     private static final float CHAR_TOP = 2.7f;
     private static final float PEDESTAL_Y = 7.65f;
     private static final float ARROW_Y = 5.3f;
     private static final float ARROW_X = 4.3f;
-    private static final float SIDE_GAP = 0.35f;   // jarak karakter samping ke lingkaran panah
-    private static final float SIDE_SCALE = 1.0f;  // 1.0 = sama tinggi dengan karakter utama
-    private static final int GHOST_ALPHA = 135;    // opacity karakter samping (0..255)
+    private static final float SIDE_GAP = 0.35f;
+    private static final float SIDE_SCALE = 1.0f;
+    private static final int GHOST_ALPHA = 135;
 
-    // Warna latar: navy blue, terang di tengah dan makin gelap ke pinggir (gradasi melingkar).
     private static final int NAVY = 0xFF0B1A47;
     private static final int NAVY_CENTER = 0xFF1C3D8C;
     private static final int NAVY_EDGE = 0xFF040A22;
@@ -70,7 +64,7 @@ public class CharacterSelectScreen {
         return selected;
     }
 
-    // Dipanggil sekali setelah ukuran layar diketahui.
+
     public void layout(int width, int height, float unit) {
         sw = width;
         sh = height;
@@ -81,7 +75,6 @@ public class CharacterSelectScreen {
         titleFace = Typeface.create("sans-serif-black", Typeface.NORMAL);
         cornerEffect = new CornerPathEffect(0.14f * u);
 
-        // Lampu sorot dan cahaya di belakang karakter.
 
         bgShader = new RadialGradient(
                 cx, sh * 0.5f,
@@ -103,27 +96,22 @@ public class CharacterSelectScreen {
                 Shader.TileMode.CLAMP
         );
 
-
-        // Kerucut lampu sorot: terang di atas, memudar ke bawah.
         beamShader = new LinearGradient(
                 0, 0, 0, PEDESTAL_Y * u,
                 0x88FFF4D0, 0x00FFF4D0,
                 Shader.TileMode.CLAMP);
 
-        // Cahaya hangat tepat di belakang karakter.
         spotShader = new RadialGradient(
                 cx, ARROW_Y * u, 4.6f * u,
                 0x99FFE08A, 0x00FFE08A,
                 Shader.TileMode.CLAMP);
 
-        // Kolam cahaya di lantai (digepengkan saat digambar).
         poolShader = new RadialGradient(
                 cx, PEDESTAL_Y * u, 3.7f * u,
                 new int[]{0xE6FFF6D8, 0x66FFE9A8, 0x00FFE9A8},
                 new float[]{0f, 0.55f, 1f},
                 Shader.TileMode.CLAMP);
 
-        // Sumber lampu di tepi atas layar.
         lampShader = new RadialGradient(
                 cx, 0, 2.4f * u,
                 0xCCFFFBE8, 0x00FFFBE8,
@@ -148,7 +136,6 @@ public class CharacterSelectScreen {
         ready = true;
     }
 
-    // ---------- Area sentuh ----------
 
     private RectF arrowRect(boolean leftSide) {
         float size = 1.8f * u;
@@ -166,10 +153,7 @@ public class CharacterSelectScreen {
         return new RectF(sw / 2f - w / 2f, top, sw / 2f + w / 2f, top + h);
     }
 
-    /**
-     * Dipanggil saat layar disentuh.
-     * Mengembalikan true kalau tombol START GAME ditekan.
-     */
+
     public boolean onTouch(float x, float y) {
         if (!ready) {
             return false;
@@ -199,7 +183,6 @@ public class CharacterSelectScreen {
         changedAt = System.nanoTime();
     }
 
-    // ---------- Gambar ----------
 
     public void draw(Canvas c) {
         if (!ready) {
@@ -241,7 +224,6 @@ public class CharacterSelectScreen {
         p.setShader(null);
     }
 
-    // Lampu sorot dari atas: kerucut cahaya berlapis, lampu di atas, dan kolam cahaya di lantai.
 
     private void drawSpotlight(Canvas c, float t) {
         float cx = sw / 2f;
@@ -249,13 +231,11 @@ public class CharacterSelectScreen {
 
         float flicker = 0.96f + 0.04f * (float) Math.sin(t * 1.5f);
 
-        // Cahaya utama di belakang karakter, menyebar sangat halus.
         p.setStyle(Paint.Style.FILL);
         p.setShader(spotShader);
         p.setAlpha((int) (180 * flicker));
         c.drawCircle(cx, ARROW_Y * u, 4.6f * u, p);
 
-        // Satu kerucut cahaya dengan tepi transparan.
         p.setShader(new RadialGradient(
                 cx, 0,
                 8.5f * u,
@@ -277,12 +257,10 @@ public class CharacterSelectScreen {
 
         c.drawPath(path, p);
 
-        // Lampu bagian atas dibuat lebih lembut.
         p.setShader(lampShader);
         p.setAlpha(180);
         c.drawCircle(cx, 0, 2.4f * u, p);
 
-        // Cahaya lantai dengan transisi transparan.
         c.save();
         c.scale(1f, 0.24f, cx, floorY);
 
@@ -296,21 +274,17 @@ public class CharacterSelectScreen {
         p.setAlpha(255);
     }
 
-    // Gambar karakter sebelumnya (kiri) dan berikutnya (kanan) dengan opacity rendah,
-    // di samping tombol panah.
     private void drawSideGhosts(Canvas c, float t, int sel) {
         float cx = sw / 2f;
         float feetY = PEDESTAL_Y * u;
-        float arrowEdge = (ARROW_X + 0.95f) * u;   // tepi luar lingkaran panah
+        float arrowEdge = (ARROW_X + 0.95f) * u;
 
         for (int side = -1; side <= 1; side += 2) {
             int idx = (sel + COUNT + side) % COUNT;
 
-            // Posisi dihitung dari tepi panah, jadi jaraknya sama untuk semua karakter.
             float halfW = assets.getCharacterPreviewWidth(idx) * SIDE_SCALE / 2f;
             float x = cx + side * (arrowEdge + SIDE_GAP * u + halfW);
 
-            // Lewati kalau keluar layar.
             if (x - halfW < 0 || x + halfW > sw) {
                 continue;
             }
@@ -325,13 +299,11 @@ public class CharacterSelectScreen {
         float feetY = PEDESTAL_Y * u;
         float bob = (float) Math.sin(t * 2.2f) * 0.1f * u;
 
-        // Bayangan di panggung.
         float shadowRx = 1.4f * u * (1f - bob / u * 0.8f);
         p.setColor(Color.argb(95, 0, 0, 0));
         rect.set(cx - shadowRx, feetY - 0.18f * u, cx + shadowRx, feetY + 0.2f * u);
         c.drawOval(rect, p);
 
-        // "Pop" sebentar saat karakter diganti.
         long elapsed = System.nanoTime() - changedAt;
         float pop = (changedAt != 0 && elapsed >= 0 && elapsed < POP_NS)
                 ? 1f - elapsed / (float) POP_NS : 0f;
@@ -343,7 +315,6 @@ public class CharacterSelectScreen {
         c.restore();
     }
 
-    // Papan kayu: bayangan, serat, tepi cokelat tua, dan paku di kiri-kanan.
     private void drawWoodSign(Canvas c, float left, float top, float right, float bottom) {
         float rad = 0.2f * u;
 
@@ -381,8 +352,6 @@ public class CharacterSelectScreen {
 
     private void drawNameAndDots(Canvas c, int sel) {
         float cx = sw / 2f;
-
-        // Label nama: papan kayu.
         float pillW = 4.4f * u;
         float pillH = 0.78f * u;
         float pillTop = 8.5f * u;
@@ -403,7 +372,6 @@ public class CharacterSelectScreen {
         c.drawText(name, cx, ty, p);
         p.setLetterSpacing(0f);
 
-        // Titik penanda karakter ke berapa.
         float dotsY = 9.58f * u;
         float gap = 0.5f * u;
 
@@ -424,15 +392,12 @@ public class CharacterSelectScreen {
         float cx = hit.centerX() + nudge;
         float cy = hit.centerY();
 
-        // Menyala sebentar saat panah ini baru ditekan.
         long elapsed = System.nanoTime() - changedAt;
         boolean mine = lastDir == (left ? -1 : 1);
         float flash = (mine && changedAt != 0 && elapsed >= 0 && elapsed < FLASH_NS)
                 ? 1f - elapsed / (float) FLASH_NS : 0f;
 
         float scale = (1f + 0.04f * (float) Math.sin(t * 3f)) * (1f + 0.25f * flash);
-
-        // Cahaya bulat di belakang.
         p.setColor(Color.argb((int) (38 + 90 * flash), 255, 214, 100));
         c.drawCircle(cx, cy, 0.75f * u * scale, p);
 
@@ -455,7 +420,6 @@ public class CharacterSelectScreen {
         c.scale(scale, scale, cx, cy);
         p.setPathEffect(cornerEffect);
 
-        // Bayangan.
         c.save();
         c.translate(0, 0.06f * u);
         p.setStyle(Paint.Style.FILL);
@@ -463,20 +427,17 @@ public class CharacterSelectScreen {
         c.drawPath(path, p);
         c.restore();
 
-        // Garis tepi cokelat tua.
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeWidth(0.15f * u);
         p.setStrokeJoin(Paint.Join.ROUND);
         p.setColor(0xFF5A2D00);
         c.drawPath(path, p);
 
-        // Isi emas bergradasi.
         p.setStyle(Paint.Style.FILL);
         p.setShader(arrowShader);
         c.drawPath(path, p);
         p.setShader(null);
 
-        // Kilau tipis di tepi.
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeWidth(0.04f * u);
         p.setColor(Color.argb(150, 255, 255, 255));
@@ -497,7 +458,6 @@ public class CharacterSelectScreen {
         p.setTextSize(0.68f * u);
         p.setLetterSpacing(0.06f);
 
-        // Bayangan, outline, lalu isi emas.
         p.setStyle(Paint.Style.FILL);
         p.setColor(Color.argb(150, 0, 0, 0));
         c.drawText(title, cx + 0.05f * u, ty + 0.07f * u, p);
@@ -513,7 +473,6 @@ public class CharacterSelectScreen {
         c.drawText(title, cx, ty, p);
         p.setShader(null);
 
-        // Garis hiasan di kiri-kanan judul.
         float halfW = p.measureText(title) / 2f;
         float lineY = ty - 0.22f * u;
 
@@ -536,19 +495,16 @@ public class CharacterSelectScreen {
         c.save();
         c.scale(pulse, pulse, btn.centerX(), btn.centerY());
 
-        // Bayangan.
         rect.set(btn);
         rect.offset(0, 0.1f * u);
         p.setStyle(Paint.Style.FILL);
         p.setColor(Color.argb(130, 0, 0, 0));
         c.drawRoundRect(rect, rad, rad, p);
 
-        // Badan tombol.
         p.setShader(buttonShader);
         c.drawRoundRect(btn, rad, rad, p);
         p.setShader(null);
 
-        // Kilatan cahaya yang lewat tiap beberapa detik.
         path.reset();
         path.addRoundRect(btn, rad, rad, Path.Direction.CW);
         c.save();
@@ -570,20 +526,17 @@ public class CharacterSelectScreen {
         }
         c.restore();
 
-        // Kilau bagian atas.
         rect.set(btn.left + 0.1f * u, btn.top + 0.06f * u,
                 btn.right - 0.1f * u, btn.centerY());
         p.setColor(Color.argb(60, 255, 255, 255));
         c.drawRoundRect(rect, 0.28f * u, 0.28f * u, p);
 
-        // Garis tepi putih.
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeWidth(0.055f * u);
         p.setColor(Color.argb(235, 255, 255, 255));
         c.drawRoundRect(btn, rad, rad, p);
         p.setStyle(Paint.Style.FILL);
 
-        // Ikon play + tulisan START GAME.
         p.setTypeface(titleFace);
         p.setTextSize(0.5f * u);
         p.setLetterSpacing(0.12f);

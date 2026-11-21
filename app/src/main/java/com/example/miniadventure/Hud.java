@@ -1,10 +1,9 @@
-package com.example.miniadventure; // samakan dengan package project kamu
+package com.example.miniadventure;
 
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 
-/** MILIK: Orang 3. Tampilan skor di layar dan layar Game Over. */
 public class Hud {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
